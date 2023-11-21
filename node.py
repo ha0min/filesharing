@@ -275,7 +275,6 @@ class Node:
 
 
 
-
 class CommandHandler:
     def __init__(self, user_port, bt_addr=None):
         self.ip = get_my_ip()

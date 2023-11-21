@@ -297,7 +297,7 @@ def initiate_leader_election():
                     print(f"Node {new_node_id} not found in the list.")
                 write_leader_config(str(new_leader))
                 print(f"[LEADER ELECTION] Node {new_leader} elected as the new leader.")
-                current_leader=new_leader
+                current_leader = new_leader
 
         time.sleep(LEADER_CHECK_INTERVAL)
 
