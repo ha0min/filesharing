@@ -5,15 +5,18 @@ import threading
 import select
 import os.path
 import sys
-from time import sleep
+import json
+from time import sleep, time
 from packet import *
 from file import File
 from write_ahead import WriteAheadLog
 from datetime import datetime
 from difflib import SequenceMatcher
 
+
+
 HOST = "0.0.0.0"
-PORT = 8081
+HOST_PORT = 0
 BT_PORT = 4
 
 ACK_LIMIT = 20 #seconds
@@ -35,29 +38,38 @@ def get_my_ip():
 
 
 class Node:
-    def __init__(self, ip, write_ahead_log):
+    def __init__(self, ip, write_ahead_log, user_port):
+        self.PORT = None
         self.ip = ip
+        self.known_servers = ['3.144.165.8']
         print(f'IP: {self.ip}')
         self.write_ahead_log = write_ahead_log
         self.files_buffer = {}
         self.sock = None
-        self.neighbors_sock = {} # maps IP to sock
-        self.neighbors_ip = {} # maps sock to IP
-        self.routes = {} # maps ip to neighbors' ip
+        self.neighbors_sock = {}  # maps IP to sock
+        self.neighbors_ip = {}  # maps sock to IP
+        self.routes = {}  #maps ip to neighbors' ip
+        self.SERVER_HOST = '3.144.165.8'
+        self.SERVER_PORT = 5551
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    def start_client(self, client):
+        client.connect((self.SERVER_HOST, self.SERVER_PORT))
+        print("Connected to the server.")
 
     def retransmit_packets_after_failure(self):
         log = self.write_ahead_log.log
         for ip in log:
             for entry in log[ip]:
                 print(f'Retransmitting {entry["file_name"]} to {ip}')
-                self.join(ip, PORT)
+                self.join(ip, self.PORT)
                 self.send_file(ip, entry["file_name"])
 
     def send_packet(self, ip, packet):
         if ip not in self.routes or self.routes[ip] not in self.neighbors_sock:
             print(f'Given IP is unknown ({ip})')
             return
-        
+
         s = self.neighbors_sock[self.routes[ip]]
         print(f'sending {MessageType.to_str(packet.type)} to {ip} (using {self.routes[ip]})')
         _, pickled_packet = create_pickled_packet(packet, None)
@@ -84,6 +96,10 @@ class Node:
             sleep(1)
 
     def join(self, ip, port, is_bt=False):
+        print('\nin join for IP and PORT ')
+        port = self.PORT
+        print(ip)
+        print(self.PORT)
         if is_bt:
             s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
         else:
@@ -126,14 +142,14 @@ class Node:
             if SequenceMatcher(None, file, file_name).ratio() >= SIMILARITY_MIN_THRESHOLD:
                 return True
         return False
-    
+
     def get_similar_file(self, file_name):
         if os.path.exists(file_name):
             return file_name
         for file in os.listdir('.'):
             if SequenceMatcher(None, file, file_name).ratio() >= SIMILARITY_MIN_THRESHOLD:
                 return file
-    
+
     def request_file(self, file_name):
         packet = Data(MessageType.FILE_SEARCH, self.ip, 'ALL')
         packet.file_name = file_name
@@ -168,7 +184,7 @@ class Node:
             self.send_packet(packet.sender, p)
         elif packet.type == MessageType.TRANSFER_REQUEST:
             self.send_file(packet.sender, packet.file_name)
-    
+
     def handle_broadcast_packet(self, packet, conn):
         if packet.type == MessageType.FILE_SEARCH:
             if self.has_file(packet.file_name):
@@ -181,7 +197,7 @@ class Node:
                     if neighbor == conn: # don't send message to where it came from
                         continue
                     self.send_packet(self.neighbors_ip[neighbor], packet)
-    
+
     def update_routes(self, packet, conn):
         self.routes[packet.sender] = self.neighbors_ip[conn]
 
@@ -204,7 +220,7 @@ class Node:
             self.remove_neighbor(sock)
             sock.close()
             return CLOSED_SOCKET
-        
+
         p = pickle.loads(data)
         print(f'Received {MessageType.to_str(p.type)} from {p.sender} for part {p.part_num} with ttl {p.ttl}')
         self.update_routes(p, sock)
@@ -217,10 +233,12 @@ class Node:
         else:
             p.ttl -= 1
             self.send_packet(p.receiver, p)
-    
+
     def run_socket(self, bt_name=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind((HOST, PORT))
+        self.sock.bind((HOST, HOST_PORT))
+        self.PORT = self.sock.getsockname()[1]  # Get the assigned port
+        print("connected port:", self.PORT)
         self.sock.listen()
         bt_sock = None
         if bt_name:
@@ -255,19 +273,33 @@ class Node:
                     except Exception as e:
                         print(f'Exception: {e}')
 
-                    
+
 
 
 class CommandHandler:
-    def __init__(self, bt_addr=None):
+    def __init__(self, user_port, bt_addr=None):
         self.ip = get_my_ip()
-        self.node = Node(self.ip, WriteAheadLog())
+        self.node = Node(self.ip, WriteAheadLog(), user_port)
+
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.leader_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        self.node.start_client(self.client)  # Move start_client to the constructor
+        self.connected_to_server = False
+
         t = threading.Thread(target=self.node.run_socket, args=(bt_addr,), daemon=True)
         t.start()
         t2 = threading.Thread(target=self.node.retransmit_packets_after_failure, daemon=True)
         t2.start()
         t3 = threading.Thread(target=self.node.check_for_time_out_acks, daemon=True)
         t3.start()
+        self.request_leader()
+
+    def connect_to_server(self):
+        if self.client is None:
+            print('here i am')
+            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.node.start_client(self.client)
 
     def run(self):
         while 1:
@@ -280,22 +312,98 @@ class CommandHandler:
                 if len(cmd) > 2:
                     self.node.join(cmd[1], BT_PORT, True)
                 else:
-                    self.node.join(cmd[1], PORT)
+                    self.node.join(cmd[1], 11)
             elif cmd[0] == 'request':
                 self.node.request_file(cmd[1])
             elif cmd[0] == 'list':
                 self.node.list_neighbors()
-            elif cmd[0] == 'leave':
-                pass
+            elif cmd[0] == 'connected':
+                self.client.sendall('get_connected_ips'.encode('utf-8'))
+                connected_clients = self.receive_connected_clients()
+                self.print_connected_clients(connected_clients)
             elif cmd[0] == 'help':
-                print('''join <ip>\nsend <ip>\nlist - lists neighbors\nhelp - shows this message\nrequest <file>''')
+                print('''join <ip>\nsend <ip>\nconnected\nlist - lists neighbors\nhelp - shows this message\nrequest <file>''')
             else:
                 print('Invalid command! use "help"')
 
+    def receive_connected_clients(self):
+        try:
+            connected_clients = self.receive_data()
+            return connected_clients
+        except Exception as e:
+            print(f"Error receiving connected clients: {e}")
+            return []
+
+    def receive_data(self):
+        try:
+            data = self.client.recv(1024).decode('utf-8')
+            if not data:
+                print("Error: Received empty data.")
+                return []
+            return json.loads(data)
+        except Exception as e:
+            print(f"Error receiving data: {e}")
+            return []
+
+    def receive_leader_data(self):
+        try:
+            data = self.leader_client.recv(1024).decode('utf-8')
+            if not data:
+                print("Error: Received empty data.")
+                return []
+            print(f"Received Leader: {data}")
+            return json.loads(data)
+        except Exception as e:
+            print(f"Error receiving data: {e}")
+            return []
+
+    def print_connected_clients(self, connected_clients):
+        print("Connected clients:")
+        for ip in connected_clients:
+            print(ip)
+
+    def connect_to_leader(self):
+        print("In connect to leader")
+        while True:
+            try:
+                self.client.connect((self.SERVER_HOST, self.SERVER_PORT))
+                print(f"Connected to the leader ({self.SERVER_HOST}).")
+                break
+            except ConnectionRefusedError:
+                print(f"Connection to the leader ({self.SERVER_HOST}) refused. Retrying...")
+                time.sleep(5)
+
+    def request_leader(self):
+        for server_host in self.node.known_servers:
+            try:
+                self.leader_client.connect((server_host, self.node.SERVER_PORT))
+                self.leader_client.sendall('LEADER_REQUEST'.encode('utf-8'))
+                self.node.SERVER_HOST = self.receive_leader_information()
+                if not self.node.SERVER_HOST:
+                    self.node.SERVER_HOST=self.node.DEFAULT_LEADER
+
+            except socket.error as e:
+                print(f"Error connecting to {server_host}: {e}")
+
+            except Exception as e:
+                print(f"Error in request_leader: {e}")
+
+            finally:
+                # Close the socket connection
+                self.leader_client.close()
+
+    def receive_leader_information(self):
+        try:
+            leader_server = self.receive_leader_data()
+            return leader_server
+        except Exception as e:
+            print(f"Error receiving connected clients: {e}")
+            return []
+
 if __name__ == '__main__':
     bt_addr = None
-    if len(sys.argv) > 1:
-        bt_addr = sys.argv[1]
+    if len(sys.argv) > 2:
+        bt_addr = sys.argv[2]
 
     c = CommandHandler(bt_addr)
     c.run()
