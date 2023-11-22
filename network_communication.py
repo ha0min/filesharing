@@ -18,12 +18,13 @@ from pocket_utils import create_pickled_packet
 import threading
 
 HOST = "0.0.0.0"
-PORT = 8081
+HOST_PORT = 0
 BT_PORT = 4
 CLOSED_SOCKET = 1
 
 class NetworkCommunication:
     def __init__(self):
+        self.PORT = None
         self.neighbors_sock = {}  # maps IP to sock
         self.neighbors_ip = {}  # maps sock to IP
         self.sock = None
@@ -97,7 +98,7 @@ class NetworkCommunication:
 
     def run_socket(self, bt_name=None, incoming_data_callback=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind((HOST, PORT))
+        self.sock.bind((HOST, HOST_PORT))
         self.sock.listen()
         bt_sock = None
         if bt_name:
