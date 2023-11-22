@@ -1,5 +1,3 @@
-from packet import *
-
 class File:
     def __init__(self):
         self.parts = []
