@@ -21,17 +21,21 @@ from network_communication import NetworkCommunication
 from network_utils import get_my_ip
 from pocket_utils import *
 from type import MessageType, BLOCK_SIZE
+
 from file import File
 from write_ahead import WriteAheadLog
 from datetime import datetime
 from difflib import SequenceMatcher
+
 import requests
 
 HOST = "0.0.0.0"
 PORT = 8081
 BT_PORT = 4
 
+
 ACK_LIMIT = 20  # seconds
+
 SIMILARITY_MIN_THRESHOLD = 0.8
 
 CLOSED_SOCKET = 1
@@ -48,6 +52,7 @@ class Node:
         self.neighbors_sock = {}  # maps IP to sock
         self.neighbors_ip = {}  # maps sock to IP
         self.routes = {}  # maps ip to neighbors' ip
+
 
     def retransmit_packets_after_failure(self):
         log = self.write_ahead_log.log
@@ -82,11 +87,13 @@ class Node:
                 for entry in self.write_ahead_log.log[ip]:
                     if (datetime.utcnow() - datetime.strptime(entry["send_time"],
                                                               '%Y-%m-%d %H:%M:%S.%f')).seconds > ACK_LIMIT:
+
                         print(f'ACK timed out for {entry["file_name"]} to {ip}')
                         print(f'Retransmitting {entry["file_name"]} to {ip}')
                         self.write_ahead_log.remove_entry(ip, entry["file_name"])
                         self.send_file(ip, entry["file_name"], False)
             sleep(1)
+
 
     # def join(self, ip, port, is_bt=False):
     #     print('-------------')
@@ -103,8 +110,10 @@ class Node:
     #     self.routes[ip] = ip
     #     print('-------------')
 
+
     def add_in_write_ahead_log(self, ip, send_time, file_name):
         self.write_ahead_log.add_entry(ip, send_time, file_name)
+
 
     # def threaded_send_file(self, ip, file_name, update_log=True):
     #     if ip not in self.routes or self.routes[ip] not in self.neighbors_sock:
@@ -191,6 +200,7 @@ class Node:
                 return
             p = Data(MessageType.TRANSFER_REQUEST, self.ip, packet.sender)
             p.file_name = packet.file_name
+
             self.network_communication.send_packet(packet.sender, p)
         elif packet.type == MessageType.TRANSFER_REQUEST:
             self.send_file(packet.sender, packet.file_name)
