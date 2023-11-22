@@ -27,6 +27,7 @@ class NetworkCommunication:
         self.PORT = None
         self.neighbors_sock = {}  # maps IP to sock
         self.neighbors_ip = {}  # maps sock to IP
+        self.routes = {}  # maps ip to neighbors' ip
         self.sock = None
 
     def join(self, ip, port, is_bt=False):

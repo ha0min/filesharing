@@ -135,7 +135,7 @@ class Node:
     #             return
 
     def threaded_send_file(self, ip, file_name, update_log=True):
-        if ip not in self.routes:
+        if ip not in self.network_communication.routes:
             print(f'Given IP is unknown ({ip})')
             return
         data = self.read_file(file_name)
