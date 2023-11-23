@@ -53,13 +53,12 @@ class Node:
         self.neighbors_ip = {}  # maps sock to IP
         self.routes = {}  # maps ip to neighbors' ip
 
-
-    def retransmit_packets_after_failure(self,port):
+    def retransmit_packets_after_failure(self):
         log = self.write_ahead_log.log
         for ip in log:
             for entry in log[ip]:
-                print(f'Retransmitting {entry["file_name"]} to {ip} and {port}')
-                self.network_communication.join(ip, port)
+                print(f'Retransmitting {entry["file_name"]} to {ip}')
+                self.network_communication.join(ip, PORT)
                 self.send_file(ip, entry["file_name"])
 
     # def send_packet(self, ip, packet):
