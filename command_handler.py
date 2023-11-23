@@ -28,11 +28,13 @@ class CommandHandler:
         self.supernode_client.start_client(self, self.client)  # Move start_client to the constructor
         t = threading.Thread(target=self.node.run_socket, args=(bt_addr,), daemon=True)
         t.start()
-        t2 = threading.Thread(target=self.node.retransmit_packets_after_failure, args=(self.PORT,), daemon=True)
+        t2 = threading.Thread(target=self.node.retransmit_packets_after_failure, daemon=True)
         t2.start()
         t3 = threading.Thread(target=self.node.check_for_time_out_acks, daemon=True)
         t3.start()
         self.supernode_client.request_leader(self)
+        leader_status_thread = threading.Thread(target=self.supernode_client.check_leader_status, daemon=True)
+        leader_status_thread.start()
 
     def list_neighbors(self):
         return self.node.list_neighbors()
@@ -47,12 +49,10 @@ class CommandHandler:
             elif cmd[0] == 'send':
                 self.node.send_file(cmd[1], cmd[2])
             elif cmd[0] == 'join':
-                if len(cmd) > 3:
+                if len(cmd) > 2:
                     self.node.network_communication.join(cmd[1], BT_PORT, True)
                 else:
-                    self.PORT = int(cmd[2])
-                    print("request ip and port to join ", cmd[1], self.PORT)
-                    self.node.network_communication.join(cmd[1], self.PORT)
+                    self.node.network_communication.join(cmd[1], PORT)
             elif cmd[0] == 'request':
                 self.node.request_file(cmd[1])
             elif cmd[0] == 'list':

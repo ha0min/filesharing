@@ -64,6 +64,19 @@ def get_own_ip():
         return None
 
 
+def remove_server_from_leader_config(removed_server_ip):
+    try:
+        current_leader = read_leader_config()
+        if current_leader == removed_server_ip:
+            print(f"Removing {removed_server_ip} from leader_config.txt")
+            # Remove the IP from the leader_config.txt file in S3
+            s3_client.delete_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
+        else:
+            print(f"{removed_server_ip} is not the current leader. No action needed.")
+    except Exception as e:
+        print(f"Error removing server from leader_config.txt: {e}")
+
+
 def get_ip_from_node_id(node_id):
     print("Node id",node_id)
     for node in nodes_to_ip:
@@ -98,19 +111,20 @@ def is_leader_alive(leader_ip):
 
 def handle_client(client_socket, addr):
     try:
-        with lock:
-            print(f"[NEW CONNECTION FOR SERVER] {addr} connected.")
-            connected_clients[addr] = client_socket
-
-        log_ip_address(addr)
-
         while True:
             data = client_socket.recv(1024).decode('utf-8')
             if not data:
                 break
             print(f"[{addr}] {data}")
+            if data.startswith('PRIVATE_IP:'):
+                private_ip = data.split(':')[1]
+                print(f"[PRIVATE IP RECEIVED] {addr} private IP: {private_ip}")
+                print(f"[NEW CONNECTION FOR SERVER] {addr} connected.")
+                with lock:
+                    connected_clients[private_ip] = client_socket
+                    log_ip_address(addr)
 
-            if data.strip().lower() == 'get_connected_ips':
+            elif data.strip().lower() == 'get_connected_ips':
                 send_connected_clients(client_socket)
 
             elif data.strip().lower() == 'leader_request':

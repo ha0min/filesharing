@@ -9,7 +9,9 @@
 
 import socket
 import json
+from datetime import time
 
+import boto3
 
 HOST = "0.0.0.0"
 HOST_PORT = 0
@@ -23,6 +25,42 @@ known_servers = ['3.144.165.8']
 SERVER_HOST = '3.144.165.8'
 SERVER_PORT = 5551
 DEFAULT_LEADER = '3.18.107.63'
+
+LEADER_RECONNECT_INTERVAL = 30  # Adjust this interval as needed
+BUCKET_NAME = "file-share-1"
+LEADER_FILE = "leader_config.txt"
+
+def read_leader_config():
+    s3 = boto3.client("s3")
+    try:
+        response = s3.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
+        return response["Body"].read().decode("utf-8")
+    except s3.exceptions.NoSuchKey:
+        return None
+
+def is_leader_alive(leader_ip):
+    try:
+        # Use a temporary socket to check if the leader is alive
+        with socket.create_connection((leader_ip, SERVER_PORT), timeout=1):
+            return True
+    except (socket.timeout, ConnectionRefusedError):
+        return False
+
+
+def check_leader_status():
+    while True:
+        global current_leader
+        leader_alive = is_leader_alive(current_leader)
+
+        if not leader_alive:
+            print(f"Leader {current_leader} is not alive. Reconnecting to the current leader.")
+            current_leader = read_leader_config()
+
+            print(f"Reconnected to the current leader: {current_leader}")
+
+        # Perform any other leader-related tasks here
+
+        time.sleep(LEADER_RECONNECT_INTERVAL)
 
 
 def start_client(self, client):

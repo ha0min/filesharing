@@ -18,7 +18,7 @@ from pocket_utils import create_pickled_packet
 import threading
 
 HOST = "0.0.0.0"
-HOST_PORT = 0
+PORT = 8082
 BT_PORT = 4
 CLOSED_SOCKET = 1
 
@@ -28,6 +28,7 @@ class NetworkCommunication:
         self.neighbors_sock = {}  # maps IP to sock
         self.neighbors_ip = {}  # maps sock to IP
         self.sock = None
+        self.routes = {} # maps ip to neighbors' ip
 
     def join(self, ip, port, is_bt=False):
         print('-------------')
@@ -47,6 +48,7 @@ class NetworkCommunication:
     def list_neighbors(self):
         neighbors = []
         for n in self.neighbors_sock.keys():
+            print(n)
             neighbors.append(n)
         return neighbors
 
@@ -98,7 +100,7 @@ class NetworkCommunication:
 
     def run_socket(self, bt_name=None, incoming_data_callback=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind((HOST, HOST_PORT))
+        self.sock.bind((HOST, PORT))
         self.sock.listen()
         bt_sock = None
         if bt_name:
