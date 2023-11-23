@@ -1,3 +1,12 @@
+"""
+
+@Author: Sana Pathan
+@File Name: supernode_server.py
+@Time: 2023/11/20
+@Contact: sanapathan28@gmail.com
+
+"""
+
 import os
 import random
 import socket
@@ -14,21 +23,17 @@ SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5551
 LEADER_PORT = 4447
 NODE_ALIVE_PREFIX = 'node'
-LEADER_CHECK_INTERVAL = 20
+LEADER_CHECK_INTERVAL = 60
 
 connected_clients = {}
 nodes = [
-    {'id': 1, 'ip': '3.134.93.58'},
-    {'id': 2, 'ip': '172.31.40.112'},
-    {'id': 3, 'ip': '3.144.165.8'},
-    {'id': 4, 'ip': '10.0.0.73'}
+    {'id': 2, 'ip': '172.31.5.165'},
+    {'id': 1, 'ip': '172.31.40.112'}
 ]
 
 nodes_to_ip = [
-    {'id': 1, 'ip': '3.134.93.58'},
-    {'id': 2, 'ip': '3.144.165.8'},
-    {'id': 3, 'ip': '3.144.165.8'},
-    {'id': 4, 'ip': '10.0.0.73'}
+    {'id': 2, 'ip': '18.219.30.179'},
+    {'id': 1, 'ip': '3.144.165.8'}
 ]
 ip_to_node_id = {node['ip']: node['id'] for node in nodes}
 
@@ -53,6 +58,31 @@ def get_own_ip():
     except Exception as e:
         print(f"Error getting own IP: {e}")
         return None
+
+
+def remove_server_from_leader_config():
+    try:
+        current_leader = read_leader_config()
+        print("Current Leader", current_leader)
+        if current_leader is not None:
+            print(f"Removing {current_leader} from leader_config.txt")
+            # Read the content of the leader_config.txt file in S3
+            file_content = get_object_from_s3(s3_client, BUCKET_NAME, LEADER_FILE)
+
+            if current_leader in file_content:
+                # Remove the current_leader from the file content
+                new_content = file_content.replace(current_leader, "").strip()
+
+                # Update the leader_config.txt file in S3 with the modified content
+                s3_client.put_object(Body=new_content.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
+
+                print(f"{current_leader} removed from leader_config.txt")
+            else:
+                print(f"{current_leader} not found in leader_config.txt. No action needed.")
+        else:
+            print("No current leader information available. No action needed.")
+    except Exception as e:
+        print(f"Error removing server from leader_config.txt: {e}")
 
 
 def get_ip_from_node_id(node_id):
@@ -89,19 +119,20 @@ def is_leader_alive(leader_ip):
 
 def handle_client(client_socket, addr):
     try:
-        with lock:
-            print(f"[NEW CONNECTION FOR SERVER] {addr} connected.")
-            connected_clients[addr] = client_socket
-
-        log_ip_address(addr)
-
         while True:
             data = client_socket.recv(1024).decode('utf-8')
             if not data:
                 break
             print(f"[{addr}] {data}")
+            if data.startswith('PRIVATE_IP:'):
+                private_ip = data.split(':')[1]
+                print(f"[PRIVATE IP RECEIVED] {addr} private IP: {private_ip}")
+                print(f"[NEW CONNECTION FOR SERVER] {addr} connected.")
+                with lock:
+                    connected_clients[private_ip] = client_socket
+                    log_ip_address(addr)
 
-            if data.strip().lower() == 'get_connected_ips':
+            elif data.strip().lower() == 'get_connected_ips':
                 send_connected_clients(client_socket)
 
             elif data.strip().lower() == 'leader_request':
@@ -120,13 +151,6 @@ def handle_client(client_socket, addr):
         client_socket.close()
         print(f"[SERVER CONNECTION] {addr} disconnected.")
 
-
-def log_ip_address(addr):
-    # Log the IP address to the file
-    with open(ip_log_file, 'a') as file:
-        file.write(f"{addr[0]}\n")
-
-
 def remove_ip_address(addr):
     # Remove the IP address from the file
     with open(ip_log_file, 'r') as file:
@@ -136,11 +160,17 @@ def remove_ip_address(addr):
             if line.strip() != addr[0]:
                 file.write(line)
 
+def log_ip_address(addr):
+    # Log the IP address to the file
+    with open(ip_log_file, 'a') as file:
+        file.write(f"{addr[0]}\n")
+
 
 def start_server():
     global server
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    SERVER_HOST=get_own_ip()
     server.bind((SERVER_HOST, SERVER_PORT))
     server.listen()
 
@@ -151,10 +181,11 @@ def start_server():
 
     def signal_handler(sig, frame):
         print("\n[SERVER SHUTTING DOWN] Closing server...")
-        for client_socket, addr in connected_clients.items():
+        for client_socket in connected_clients.values():
             client_socket.close()
         server.close()
         remove_alive_file()
+        remove_server_from_leader_config()
 
         # Print a message indicating where the IP addresses are stored
         print(f"IP addresses are stored in {ip_log_file}")
@@ -164,7 +195,7 @@ def start_server():
 
     while True:
         client_socket, addr = server.accept()
-        client_handler = threading.Thread(target=handle_client, args=(client_socket, addr))
+        client_handler = threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True)
         client_handler.start()
 
 
@@ -215,7 +246,7 @@ def create_alive_file(node_id):
         print(f"Alive file for node {node_id} already exists in bucket {BUCKET_NAME} at {file_key}")
 
 
-def remove_alive_file(node_id):
+def remove_alive_file():
     own_ip = get_own_ip()
 
     if own_ip is None:
@@ -272,13 +303,19 @@ def initiate_leader_election():
     while True:
         create_alive_file(own_node_id)
         global current_leader
+        create_alive_file(own_node_id)
         current_leader = read_leader_config()
-        leader_alive = is_leader_alive(current_leader)
+        print("Current Leader", current_leader)
+        if current_leader.strip():  # Check if current_leader is not blank or only whitespace
+            leader_alive = is_leader_alive(current_leader)
 
-        if leader_alive:
-            print(f"Leader {current_leader} is alive.")
+            if leader_alive:
+                print(f"Leader {current_leader} is alive.")
+            else:
+                print(f"Leader {current_leader} is not alive. Re-electing a new leader.")
+                current_leader = None
         else:
-            print(f"Leader {current_leader} is not alive. Re-electing a new leader.")
+            print("No current leader information available. No action needed.")
             current_leader = None
 
         # Check if the S3 object (file) exists
@@ -303,4 +340,3 @@ def initiate_leader_election():
 
 if __name__ == "__main__":
     start_server()
-

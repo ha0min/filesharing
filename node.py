@@ -16,7 +16,7 @@ from difflib import SequenceMatcher
 
 
 HOST = "0.0.0.0"
-HOST_PORT = 0
+HOST_PORT = 8081
 BT_PORT = 4
 
 ACK_LIMIT = 20 #seconds
@@ -39,9 +39,9 @@ def get_my_ip():
 
 class Node:
     def __init__(self, ip, write_ahead_log, user_port):
-        self.PORT = None
+        self.PORT = 8081
         self.ip = ip
-        self.known_servers = ['3.144.165.8']
+        self.known_servers = ['3.144.165.8','18.219.30.179']
         print(f'IP: {self.ip}')
         self.write_ahead_log = write_ahead_log
         self.files_buffer = {}
@@ -49,13 +49,15 @@ class Node:
         self.neighbors_sock = {}  # maps IP to sock
         self.neighbors_ip = {}  # maps sock to IP
         self.routes = {}  #maps ip to neighbors' ip
-        self.SERVER_HOST = '3.144.165.8'
+        self.SERVER_HOST = '18.219.30.179'
         self.SERVER_PORT = 5551
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def start_client(self, client):
         client.connect((self.SERVER_HOST, self.SERVER_PORT))
-        print("Connected to the server.")
+        private_ip=self.ip
+        client.send(f'PRIVATE_IP:{private_ip}'.encode('utf-8'))
+        print("Connected to the server from:",self.ip)
 
     def retransmit_packets_after_failure(self):
         log = self.write_ahead_log.log
@@ -237,7 +239,7 @@ class Node:
     def run_socket(self, bt_name=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((HOST, HOST_PORT))
-        self.PORT = self.sock.getsockname()[1]  # Get the assigned port
+        #self.PORT = HOST_PORT  # Get the assigned port
         print("connected port:", self.PORT)
         self.sock.listen()
         bt_sock = None
@@ -292,7 +294,8 @@ class CommandHandler:
         t2.start()
         t3 = threading.Thread(target=self.node.check_for_time_out_acks, daemon=True)
         t3.start()
-        self.request_leader()
+        default='default'
+        self.request_leader(default)
 
     def connect_to_server(self):
         if self.client is None:
@@ -301,29 +304,32 @@ class CommandHandler:
             self.node.start_client(self.client)
 
     def run(self):
-        while 1:
-            cmd = input('> ').split()
-            if not cmd:
-                continue
-            elif cmd[0] == 'send':
-                self.node.send_file(cmd[1], cmd[2])
-            elif cmd[0] == 'join':
-                if len(cmd) > 2:
-                    self.node.join(cmd[1], BT_PORT, True)
+        try:
+            while 1:
+                cmd = input('> ').split()
+                if not cmd:
+                    continue
+                elif cmd[0] == 'send':
+                    self.node.send_file(cmd[1], cmd[2])
+                elif cmd[0] == 'join':
+                    if len(cmd) > 2:
+                        self.node.join(cmd[1], BT_PORT, True)
+                    else:
+                        self.node.join(cmd[1], 11)
+                elif cmd[0] == 'request':
+                    self.node.request_file(cmd[1])
+                elif cmd[0] == 'list':
+                    self.node.list_neighbors()
+                elif cmd[0] == 'connected':
+                    self.client.sendall('get_connected_ips'.encode('utf-8'))
+                    connected_clients = self.receive_connected_clients()
+                    self.print_connected_clients(connected_clients)
+                elif cmd[0] == 'help':
+                    print('''join <ip>\nsend <ip>\nconnected\nlist - lists neighbors\nhelp - shows this message\nrequest <file>''')
                 else:
-                    self.node.join(cmd[1], 11)
-            elif cmd[0] == 'request':
-                self.node.request_file(cmd[1])
-            elif cmd[0] == 'list':
-                self.node.list_neighbors()
-            elif cmd[0] == 'connected':
-                self.client.sendall('get_connected_ips'.encode('utf-8'))
-                connected_clients = self.receive_connected_clients()
-                self.print_connected_clients(connected_clients)
-            elif cmd[0] == 'help':
-                print('''join <ip>\nsend <ip>\nconnected\nlist - lists neighbors\nhelp - shows this message\nrequest <file>''')
-            else:
-                print('Invalid command! use "help"')
+                    print('Invalid command! use "help"')
+        except KeyboardInterrupt:
+            print("\nExiting...")
 
     def receive_connected_clients(self):
         try:
@@ -337,11 +343,21 @@ class CommandHandler:
         try:
             data = self.client.recv(1024).decode('utf-8')
             if not data:
-                print("Error: Received empty data.")
+                print("Error: Received empty data. Initiating leader election...")
+                self.request_leader('None')
+                leader_server = self.receive_leader_information()
+                if leader_server:
+                    print(f"Leader election successful. New leader: {leader_server}")
+                    self.connect_to_leader()
+                    self.client.sendall('get_connected_ips'.encode('utf-8'))
+                    connected_clients = self.receive_connected_clients()
+                    self.print_connected_clients(connected_clients)
+                else:
+                    print("Leader election failed. Retrying...")
                 return []
             return json.loads(data)
         except Exception as e:
-            print(f"Error receiving data: {e}")
+            print(f"Error receiving ip data: {e}")
             return []
 
     def receive_leader_data(self):
@@ -353,7 +369,7 @@ class CommandHandler:
             print(f"Received Leader: {data}")
             return json.loads(data)
         except Exception as e:
-            print(f"Error receiving data: {e}")
+            print(f"Error receiving leader data: {e}")
             return []
 
     def print_connected_clients(self, connected_clients):
@@ -372,24 +388,30 @@ class CommandHandler:
                 print(f"Connection to the leader ({self.SERVER_HOST}) refused. Retrying...")
                 time.sleep(5)
 
-    def request_leader(self):
+    def request_leader(self, default):
         for server_host in self.node.known_servers:
-            try:
-                self.leader_client.connect((server_host, self.node.SERVER_PORT))
-                self.leader_client.sendall('LEADER_REQUEST'.encode('utf-8'))
-                self.node.SERVER_HOST = self.receive_leader_information()
-                if not self.node.SERVER_HOST:
-                    self.node.SERVER_HOST=self.node.DEFAULT_LEADER
+            print(server_host)
+            print(default)
+            print(self.node.SERVER_HOST)
+            if default == 'default' or server_host != self.node.SERVER_HOST:
+                try:
+                    self.leader_client.connect((server_host, self.node.SERVER_PORT))
+                    self.leader_client.sendall('LEADER_REQUEST'.encode('utf-8'))
+                    self.node.SERVER_HOST = self.receive_leader_information()
+                    if not self.node.SERVER_HOST:
+                        self.node.SERVER_HOST=self.node.DEFAULT_LEADER
 
-            except socket.error as e:
-                print(f"Error connecting to {server_host}: {e}")
+                except socket.error as e:
+                    print(f"Error connecting to {server_host}: {e}")
 
-            except Exception as e:
-                print(f"Error in request_leader: {e}")
+                except Exception as e:
+                    print(f"Error in request_leader: {e}")
 
-            finally:
-                # Close the socket connection
-                self.leader_client.close()
+                finally:
+                    # Close the socket connection
+                    self.leader_client.close()
+            else:
+                print("No valid server to connect")
 
     def receive_leader_information(self):
         try:
