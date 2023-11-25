@@ -28,5 +28,11 @@ ping = '/ping'
 global node_join_procedure # POST: adds node to the Chord {node uid, ip, port}
 node_join_procedure = '/node/procedure'
 
+global node_update_replicate # POST: updates the replicate nodes of the node {node uid, ip, port}
+node_update_replicate = '/node/update_replicate'
+
 global node_update_neighbours
 node_update_neighbours = '/node/update_neighbours'
+
+global replic_nodes_list # POST: returns list of replicate nodes of the node
+replic_nodes_list = '/node/replic_nodes_list'

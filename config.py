@@ -22,3 +22,5 @@ NDEBUG = True  # debug information for node operations
 TDEBUG = False  # debug information fot test operations
 vBDEBUG = False  # extra verbose debug information for bootstrap operations
 vNDEBUG = False  # extra verbose debug information for node operations
+
+FILE_DIR = BASE_DIR + 'files/'

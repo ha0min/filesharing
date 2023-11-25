@@ -28,6 +28,19 @@ mids = []		# list of dicts, descending uids
 global nids
 nids = []		# list of dicts, first element is the previous node and second element is the next node
 
+
+# --------------------------------------------------------
+# The File global variable
+global replica_file_list
+replica_file_list = []
+global my_file_list
+my_file_list = []
+
+global node_file_dir
+global node_my_file_dir
+global node_replica_file_dir
+
+
 # --------------------------------------------------------
 # variables for async function
 global server_starting

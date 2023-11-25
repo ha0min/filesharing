@@ -18,7 +18,7 @@ import config
 from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
-from chord import hash, node_join_list
+from chord import hash, node_join_list, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data
 
 app = Flask(__name__)
 
@@ -81,20 +81,40 @@ def join_procedure():
         if config.NDEBUG:
             print("Node list creation is starting...")
         data = {"node_list": node_list, "k": common.k, "new_id": common.my_id}
-        node_list_json = node_join_list(data)
-        # node_list = node_list_json["node_list"]
-        #TODO: implement the node_list_json
+        node_list_json = node_replic_nodes_list(data)
+        node_list = node_list_json["node_list"]
         if config.NDEBUG:
-            print("Node list created: ", node_list)
+            print("i am the new node, i should get replica from these nodes: ", node_list)
 
         data = {"node_list": node_list, "new_id": common.my_id}
-        # chord_join_update_post_func(data)
-        #TODO: implement the chord_join_update_post_func
+        node_redistribute_data(data)
 
     if config.NDEBUG:
         print("Join of node completed - Overlay to check")
 
     return "Join Completed"
+
+
+@app.route(endpoints.replic_nodes_list, methods=['POST'])
+def get_response_chain():
+    res = request.get_json()
+    data = res["data"]
+    return node_replic_nodes_list(data)
+
+
+@app.route(endpoints.node_update_replicate, methods=['POST'])
+def update_replicate():
+    """
+    Update the replicate nodes of the node.
+    """
+    if config.NDEBUG:
+        print("Updating replicate nodes...")
+    res = request.get_json()
+    node_list = res["node_list"]
+    common.mids = node_list
+    if config.NDEBUG:
+        print("Replicate nodes updated")
+    return "Replicate nodes updated"
 
 
 @app.route(endpoints.node_update_neighbours, methods=['POST'])  # update(nodeID)
@@ -116,11 +136,15 @@ def server_start():
     else:
         wrong_input_format()
     common.my_ip = get_my_ip()
+    common.my_uid = hash(common.my_ip + ":" + common.my_port)
+    common.node_file_dir = config.FILE_DIR + common.my_uid + "/"
+    common.node_my_file_dir = common.node_file_dir + "my_files/"
+    common.node_replicate_file_dir = common.node_file_dir + "replicate_files/"
     if len(sys.argv) == 4 and sys.argv[3] in ("-b", "-B"):
         print("I am the Bootstrap Node with ip: " + yellow(
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
-        common.my_id = hash(common.my_ip + ":" + common.my_port)
-        print("and my unique id is: " + green(common.my_id))
+        print("and my unique id is: " + green(common.my_uid))
+        print("and my file directory is: " + green(common.node_file_dir))
         common.is_bootstrap = True
         init_server()
 
@@ -128,8 +152,8 @@ def server_start():
         common.is_bootstrap = False
         print("I am a normal Node with ip: " + yellow(common.my_ip) + " about to run a Flask server on port " + yellow(
             common.my_port))
-        common.my_id = hash(common.my_ip + ":" + common.my_port)
-        print("and my unique id is: " + green(common.my_id))
+        print("and my unique id is: " + green(common.my_uid))
+        print("and my file directory is: " + green(common.node_file_dir))
         # x = threading.Thread(target=node_initial_join, args=[])
         # x.start()
 

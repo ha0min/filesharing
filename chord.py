@@ -52,17 +52,55 @@ def node_initial_join():
                 exit(0)
 
 
-def node_join_list(data):
+def node_replic_nodes_list(data):
     """
-
+    list the nodes that the new node is responsible for replication
     :param data: {"node_list": node_list, "k": common.k, "new_id": common.my_id}
     :return:
     """
     node_list = data["node_list"]
-    k = data["k"]
+    k = data["k"]  # k is the number of nodes that the new node should be responsible for replication
     new_id = data["new_id"]
 
+    if common.my_uid != new_id:
+        node_list.append(common.my_uid)
 
+    if k >= 1:
+        response = requests.post(
+            config.ADDR + common.nids[0]["ip"] + ":" + common.nids[0]["port"] + endpoints.replic_nodes_list,
+            json={"node_list": node_list, "k": k - 1, "new_id": new_id})
+        print(yellow("Got request for new nodes wants to replicate, current list new node needs to handled is:"))
+        print(response.json())
+        return response.json()
+    else:
+        print(yellow("Got request for new nodes wants to replicate, i am the last one, current list it needs to "
+                     "handled is:"))
+        return {"node_list": node_list}
+
+
+def node_redistribute_data(data):
+    """
+    redistribute the data to the new node, after the new node join the chord
+    endpoint: endpoints.node_join_procedure
+    :param data: {"node_list": node_list, "new_id": new added node id}
+    :return:
+    """
+    print("Chord join update POST function is starting...")
+    node_list = data["node_list"]
+    new_id = data["new_id"]
+    try:
+        response = requests.post(
+            config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + endpoints.node_update_replicate,
+            json={"node_list": node_list, "new_id": new_id})
+        song_list_json = response.json()
+        song_list = song_list_json["song_list"]
+    except:
+        print("Problem with join update song list operation")
+        return "NOT OK"
+
+    for item in song_list:
+        common.songs.append(item)
+    return "New node songs and replication updated"
 
 
 def node_update_neighbours_func(data):
@@ -75,7 +113,6 @@ def node_update_neighbours_func(data):
         print(yellow("NEW Next Node:"))
         print(common.nids[1])
     return "new neighbours set"
-
 
 
 # ----------------------Syllabus Function---------------------------------------

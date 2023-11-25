@@ -198,14 +198,14 @@ def get_all_available_servers():
     :return:
     """
     available_servers = s3_server_bucket.objects.all()
-    print(cyan("Available servers", available_servers))
+    print(cyan("Available servers" ), str(available_servers))
     return available_servers
 
 
 def remove_server_from_leader_config():
     try:
         current_leader = read_leader_config()
-        print(red("Current Leader", current_leader))
+        print(red("Current Leader"), str(current_leader))
         if current_leader is not None:
             print(red("[Update Leader Config]"), ("Try to remove myself as current leader from leader_config.txt..."))
             current_node_identifier = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
@@ -273,7 +273,7 @@ def init_server():
     leader_election_thread.start()
 
     def signal_handler(sig, frame):
-        print('\n');
+        print('\n')
         print(red("[SERVER SHUTTING DOWN]"), "Closing server...")
         remove_alive_file()
         remove_server_from_leader_config()
@@ -340,15 +340,15 @@ def bootstrap_join_func(new_node):
     next_of_next = common.mids[new_node_idx + 2] if new_node_idx < len(common.mids) - 2 else (
         common.mids[0] if new_node_idx < len(common.mids) - 1 else common.mids[1])
 
-    response_p = requests.post(config.ADDR + prev["ip"] + ":" + prev["port"] + endpoints.n_update_peers,
+    response_p = requests.post(config.ADDR + prev["ip"] + ":" + prev["port"] + endpoints.node_update_neighbours,
                                json={"prev": prev_of_prev, "next": new_node})
     if response_p.status_code == 200 and response_p.text == "new neighbours set":
         if config.BDEBUG:
             print(blue("Updated previous neighbour successfully"))
     else:
         print(RED("Something went wrong while updating previous node list"))
-    print(config.ADDR, next["ip"], ":", next["port"], endpoints.n_update_peers)
-    response_n = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.n_update_peers,
+    print(config.ADDR, next["ip"], ":", next["port"], endpoints.node_update_neighbours)
+    response_n = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
                                json={"prev": new_node, "next": next_of_next})
     if response_n.status_code == 200 and response_n.text == "new neighbours set":
         if config.BDEBUG:
