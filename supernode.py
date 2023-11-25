@@ -45,7 +45,7 @@ nodes_to_ip = [
 ip_to_node_id = {node['ip']: node['id'] for node in nodes}
 
 current_leader = None
-ip_log_file = 'ip_addresses.txt'
+ip_log_file = 'node_info.json'
 HEARTBEAT_TIMEOUT = 10
 
 lock = threading.Lock()
@@ -54,13 +54,14 @@ connected_clients_lock = threading.Lock()
 leader_lock = threading.Lock()
 s3_client = boto3.client('s3')
 s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
+s3_server = boto3.resource('s3')
 
 
 def is_leader_alive(leader_ip):
     # Use a temporary socket to check if the leader is alive
     if leader_ip == common.my_ip:
         return True
-    print(("Checking if leader is alive..." + yellow(leader_ip + ":" + str(LEADER_PORT))))
+    print(red("[Server]"), ("Checking if leader is alive..." + yellow(leader_ip + ":" + str(LEADER_PORT))))
     response = requests.post(config.ADDR + leader_ip + ":" + str(LEADER_PORT) + endpoints.ping)
     if response.status_code == 200 and response.text == "pong":
         return True
@@ -88,9 +89,21 @@ def read_leader_config():
     s3 = boto3.client("s3")
     try:
         response = s3.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
+        content = response["Body"].read().decode("utf-8")
+
         print(red("[read_leader_config] response", response))
-        return json.loads(response["Body"].read().decode("utf-8"))
+        if not content:
+            # Handle empty file content
+            return None
+        return json.loads(content)
+    except json.JSONDecodeError:
+        # Handle invalid JSON content
+        return None
     except s3.exceptions.NoSuchKey:
+        # Handle file not found
+        return None
+    except Exception as e:
+        print(f"An error occurred in read_leader_config: {e}")
         return None
 
 
@@ -182,14 +195,13 @@ def remove_server_from_leader_config():
         current_leader = read_leader_config()
         print(red("Current Leader", current_leader))
         if current_leader is not None:
-            print(f"Removing {current_leader} from leader_config.txt")
-            # Read the content of the leader_config.txt file in S3
-            file_content = get_object_from_s3(s3_client, BUCKET_NAME, LEADER_FILE)
+            print(red("[Update Leader Config]"), ("Try to remove myself as current leader from leader_config.txt..."))
+            current_node_identifier = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
 
-            if current_leader in file_content:
+            # Check if the current leader is the same as the current node
+            if current_leader == current_node_identifier:
                 # Remove the current_leader from the file content
-                new_content = file_content.replace(current_leader, "").strip()
-
+                new_content = ''
                 # Update the leader_config.txt file in S3 with the modified content
                 s3_client.put_object(Body=new_content.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
 
@@ -256,7 +268,6 @@ def init_server():
         remove_server_from_leader_config()
 
         # Print a message indicating where the IP addresses are stored
-        print(f"IP addresses are stored in {ip_log_file}")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)

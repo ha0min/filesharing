@@ -14,6 +14,7 @@ import socket
 
 from flask import Flask, json, request
 
+from supernode import init_server
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash
@@ -72,6 +73,7 @@ def server_start():
         common.my_id = hash(common.my_ip + ":" + common.my_port)
         print("and my unique id is: " + green(common.my_id))
         common.is_bootstrap = True
+        init_server()
 
     else:
         common.is_bootstrap = False
