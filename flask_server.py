@@ -43,6 +43,7 @@ def ping():
     """
     return "pong"
 
+
 @app.route(endpoints.join_bootstrap , methods = ['POST'])										# join(nodeID)
 def boot_join():
 	if common.boot:
@@ -57,6 +58,7 @@ def server_start():
     Entry point of the flask server.
     :return:
     """
+    common.server_starting = True
     if len(sys.argv) < 4:
         wrong_input_format()
     if sys.argv[1] in ("-p", "-P"):
@@ -69,17 +71,10 @@ def server_start():
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
         common.my_id = hash(common.my_ip + ":" + common.my_port)
         print("and my unique id is: " + green(common.my_id))
-        common.boot = True
-        common.mids.append(
-            {"uid": common.my_id, "ip": common.my_ip,
-             "port": common.my_port})  # boot is the first one to enter the list
-        common.nids.append({"uid": common.my_id, "ip": common.my_ip,
-                            "port": common.my_port})  # initialy boot is the previous node of himself
-        common.nids.append(
-            {"uid": common.my_id, "ip": common.my_ip,
-             "port": common.my_port})  # initialy boot is the next node of himself
+        common.is_bootstrap = True
+
     else:
-        common.boot = False
+        common.is_bootstrap = False
         print("I am a normal Node with ip: " + yellow(common.my_ip) + " about to run a Flask server on port " + yellow(
             common.my_port))
         common.my_id = hash(common.my_ip + ":" + common.my_port)

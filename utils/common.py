@@ -27,3 +27,8 @@ still_on_chord = True
 mids = []		# list of dicts, descending uids
 global nids
 nids = []		# list of dicts, first element is the previous node and second element is the next node
+
+# --------------------------------------------------------
+# variables for async function
+global server_starting
+server_starting = False

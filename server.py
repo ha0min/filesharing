@@ -20,7 +20,7 @@ import json
 import boto3
 import time
 
-from utils.colorfy import *
+from utils.colorfy import red
 
 BUCKET_NAME = "file-share-1"
 LEADER_FILE = "leader_config.txt"
