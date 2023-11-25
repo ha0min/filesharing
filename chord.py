@@ -11,6 +11,7 @@
 """
 import hashlib
 import json
+import time
 
 import requests
 
@@ -113,6 +114,28 @@ def node_update_neighbours_func(data):
         print(yellow("NEW Next Node:"))
         print(common.nids[1])
     return "new neighbours set"
+
+
+def node_update_finger_table_func(res):
+    while common.node_updating_finger_table:
+        print(red(["[node_update_finger_table_func] waiting for previous to be done..."]))
+        time.sleep(1)
+
+    common.node_updating_finger_table = True
+    try:
+        if "timestamp" not in res or "finger_table" not in res:
+            return "Invalid data format", 400
+
+        if common.my_finger_table is not None and common.my_finger_table_timestamp > res["timestamp"]:
+            print(yellow("[node_update_finger_table_func] Received older finger table. Not updating."))
+            return "Finger table update skipped due to older timestamp", 200
+
+        common.my_finger_table_timestamp = res["timestamp"]
+        common.my_finger_table = res["finger_table"]
+        return "Finger table updated", 200
+
+    finally:
+        common.node_updating_finger_table = False
 
 
 # ----------------------Syllabus Function---------------------------------------

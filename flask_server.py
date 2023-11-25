@@ -18,7 +18,8 @@ import config
 from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
-from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data
+from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
+    node_update_finger_table_func
 
 app = Flask(__name__)
 
@@ -123,15 +124,14 @@ def update_finger_table():
     Update the finger table of the node.
     """
     res = request.get_json()
+    if 'finger_table' not in res or 'timestamp' not in res:
+        return "Invalid request format: 'timestamp' or'finger_table' key missing", 400
+
     if config.NDEBUG:
         print(red("Updating finger table..."))
         print(str(res))
 
-    finger_table = res["finger_table"]
-    common.finger_table = finger_table
-    if config.NDEBUG:
-        print("Current node finger table updated", str(res))
-    return "Finger table updated"
+    return node_update_finger_table_func(res)
 
 
 def server_start():

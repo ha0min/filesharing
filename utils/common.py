@@ -39,6 +39,8 @@ nids = []		# list of dicts, first element is the previous node and second elemen
 global my_finger_table
 my_finger_table = []	# list of dicts, each dict is a finger table
 
+global my_finger_table_timestamp
+
 
 # Supernode variables
 global finger_tables

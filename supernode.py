@@ -478,7 +478,7 @@ def send_finger_table_update(node, finger_table):
     """
     try:
         response = requests.post(config.ADDR + node["ip"] + ":" + node["port"] + endpoints.node_update_finger_table,
-                                 json={"finger_table": finger_table})
+                                 json={"finger_table": finger_table, "timestamp": time.time()})
         if response.status_code == 200 and response.text == "finger table updated":
             if config.BDEBUG:
                 print(blue(f"Updated finger table of {node['uid']} successfully"))
