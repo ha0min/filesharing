@@ -27,7 +27,7 @@ def node_initial_join():
                 print(yellow("\nattempting to join the Chord..."))
             try:
                 response = requests.post(
-                    config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.join_bootstrap,
+                    config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.node_join_bootstrap,
                     data={"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})
                 if response.status_code == 200:
                     data = response.json()
@@ -50,6 +50,32 @@ def node_initial_join():
                 print(red("\nSomething went wrong!! (check if bootstrap is up and running)"))
                 print(red("\nexiting..."))
                 exit(0)
+
+
+def node_join_list(data):
+    """
+
+    :param data: {"node_list": node_list, "k": common.k, "new_id": common.my_id}
+    :return:
+    """
+    node_list = data["node_list"]
+    k = data["k"]
+    new_id = data["new_id"]
+
+
+
+
+def node_update_neighbours_func(data):
+    common.nids[0] = data["prev"]
+    common.nids[1] = data["next"]
+    if config.NDEBUG:
+        print(red("[node_update_neighbours_func] Updated neighbours:"))
+        print(yellow("NEW Previous Node:"))
+        print(common.nids[0])
+        print(yellow("NEW Next Node:"))
+        print(common.nids[1])
+    return "new neighbours set"
+
 
 
 # ----------------------Syllabus Function---------------------------------------

@@ -14,17 +14,20 @@ import socket
 
 from flask import Flask, json, request
 
+import config
 from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
-from chord import hash
+from chord import hash, node_join_list
 
 app = Flask(__name__)
 
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Hello, world, flask server is running!"
+    return json.dumps(
+        {"ip": common.my_ip, "port": common.my_port, "id": common.my_id, "boot": common.boot, "mids": common.mids,
+         "nids": common.nids})
 
 
 @app.route(endpoints.node_info, methods=['GET'])
@@ -45,13 +48,59 @@ def ping():
     return "pong"
 
 
-@app.route(endpoints.join_bootstrap, methods=['POST'])  # join(nodeID)
+@app.route(endpoints.node_join_bootstrap, methods=['POST'])  # join(nodeID)
 def boot_join():
-    if common.boot:
+    if common.is_bootstrap:
         new_node = request.form.to_dict()
         return bootstrap_join_func(new_node)
     else:
-        print(red(f"This is not the bootstrap node and not allowed for {endpoints.join_bootstrap}."))
+        print(red(f"This is not the bootstrap node and not allowed for {endpoints.node_join_bootstrap}."))
+
+
+@app.route(endpoints.node_join_procedure, methods=['POST'])
+def join_procedure():
+    print(red("Chord join procedure Start!"))
+    if config.NDEBUG:
+        print("chord_join_procedure is staring...")
+    res = request.get_json()
+
+    prev = res["prev"]
+    next = res["next"]
+    node_number = res["length"]
+    node_list = []
+
+    common.nids.append({"uid": prev["uid"], "ip": prev["ip"], "port": prev["port"]})
+    common.nids.append({"uid": next["uid"], "ip": next["ip"], "port": next["port"]})
+    if config.NDEBUG:
+        print(yellow("Previous Node:"))
+        print(common.nids[0])
+        print(yellow("Next Node:"))
+        print(common.nids[1])
+
+    if common.k <= node_number:
+        if config.NDEBUG:
+            print("Node list creation is starting...")
+        data = {"node_list": node_list, "k": common.k, "new_id": common.my_id}
+        node_list_json = node_join_list(data)
+        # node_list = node_list_json["node_list"]
+        #TODO: implement the node_list_json
+        if config.NDEBUG:
+            print("Node list created: ", node_list)
+
+        data = {"node_list": node_list, "new_id": common.my_id}
+        # chord_join_update_post_func(data)
+        #TODO: implement the chord_join_update_post_func
+
+    if config.NDEBUG:
+        print("Join of node completed - Overlay to check")
+
+    return "Join Completed"
+
+
+@app.route(endpoints.node_update_neighbours, methods=['POST'])  # update(nodeID)
+def chord_update_neighbours():
+    new_neighbours = request.get_json()
+    return node_update_neighbours_func(new_neighbours)
 
 
 def server_start():

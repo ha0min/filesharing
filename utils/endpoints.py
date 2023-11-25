@@ -13,8 +13,8 @@
 global node_info # GET: returns node info
 node_info = '/node/info'
 
-global join_bootstrap  # POST: adds node to the Chord {node uid, ip, port}
-join_bootstrap = '/boot/join'
+global node_join_bootstrap  # POST: adds node to the Chord {node uid, ip, port}
+node_join_bootstrap = '/boot/join'
 
 global b_leave  # POST: removes node from the Chord {node uid}
 b_leave = '/boot/leave'
@@ -24,3 +24,9 @@ b_list = '/boot/list'
 
 global ping # GET: check if the node alive, returns "pong"
 ping = '/ping'
+
+global node_join_procedure # POST: adds node to the Chord {node uid, ip, port}
+node_join_procedure = '/node/procedure'
+
+global node_update_neighbours
+node_update_neighbours = '/node/update_neighbours'

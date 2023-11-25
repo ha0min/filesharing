@@ -302,6 +302,26 @@ def bootstrap_join_func(new_node):
     if config.BDEBUG:
         print(blue(candidate_id) + " wants to join the Chord with ip:port " + blue(
             new_node["ip"] + ":" + new_node["port"]))
+
+    # if the new node is the first node in the Chord
+    if len(common.mids) == 0:
+        common.mids.append(new_node)
+        response = {
+            "prev": {
+                "uid": new_node["uid"],
+                "ip": new_node["ip"],
+                "port": new_node["port"]
+            },
+            "next": {
+                "uid": new_node["uid"],
+                "ip": new_node["ip"],
+                "port": new_node["port"]
+            }
+        }
+        save_node_list_to_s3(common.mids)
+        common.server_node_joining = False
+        return response
+
     for idx, ids in enumerate(common.mids):
         if candidate_id < ids["uid"]:
             common.mids.insert(idx, new_node)
