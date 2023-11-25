@@ -12,6 +12,14 @@
 """
 
 # --------------------------------------------------------
+# The system global variable
+
+global k # number of replicas
+k = 1
+
+
+
+# --------------------------------------------------------
 # The node's global variable
 global is_bootstrap		# true if node is bootstrap
 global is_leader # true if the bootstrap node is leader
@@ -28,6 +36,13 @@ mids = []		# list of dicts, descending uids
 global nids
 nids = []		# list of dicts, first element is the previous node and second element is the next node
 
+global my_finger_table
+my_finger_table = []	# list of dicts, each dict is a finger table
+
+
+# Supernode variables
+global finger_tables
+finger_tables = []	# list of dicts, each dict is a finger table
 
 # --------------------------------------------------------
 # The File global variable
@@ -48,3 +63,9 @@ server_starting = False
 
 global server_node_joining
 server_node_joining = False
+
+global server_updating_finger_table
+server_updating_finger_table = False
+
+global node_updating_finger_table
+node_updating_finger_table = False

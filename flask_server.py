@@ -18,7 +18,7 @@ import config
 from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
-from chord import hash, node_join_list, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data
+from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data
 
 app = Flask(__name__)
 
@@ -26,18 +26,12 @@ app = Flask(__name__)
 @app.route('/', methods=['GET'])
 def home():
     return json.dumps(
-        {"ip": common.my_ip, "port": common.my_port, "id": common.my_id, "boot": common.boot, "mids": common.mids,
-         "nids": common.nids})
+        {"ip": common.my_ip, "port": common.my_port, "id": common.my_uid,
+         "supernode": common.is_bootstrap,
+         "mids": common.mids,
+         "nids": common.nids}
+    )
 
-
-@app.route(endpoints.node_info, methods=['GET'])
-def info():
-    """
-    Return the information of the node.
-    """
-    return json.dumps(
-        {"ip": common.my_ip, "port": common.my_port, "id": common.my_id, "boot": common.boot, "mids": common.mids,
-         "nids": common.nids})
 
 
 @app.route(endpoints.ping, methods=['GET'])
@@ -80,13 +74,13 @@ def join_procedure():
     if common.k <= node_number:
         if config.NDEBUG:
             print("Node list creation is starting...")
-        data = {"node_list": node_list, "k": common.k, "new_id": common.my_id}
+        data = {"node_list": node_list, "k": common.k, "new_id": common.my_uid}
         node_list_json = node_replic_nodes_list(data)
         node_list = node_list_json["node_list"]
         if config.NDEBUG:
             print("i am the new node, i should get replica from these nodes: ", node_list)
 
-        data = {"node_list": node_list, "new_id": common.my_id}
+        data = {"node_list": node_list, "new_id": common.my_uid}
         node_redistribute_data(data)
 
     if config.NDEBUG:
@@ -121,6 +115,23 @@ def update_replicate():
 def chord_update_neighbours():
     new_neighbours = request.get_json()
     return node_update_neighbours_func(new_neighbours)
+
+
+@app.route(endpoints.node_update_finger_table, methods=['POST'])
+def update_finger_table():
+    """
+    Update the finger table of the node.
+    """
+    res = request.get_json()
+    if config.NDEBUG:
+        print(red("Updating finger table..."))
+        print(str(res))
+
+    finger_table = res["finger_table"]
+    common.finger_table = finger_table
+    if config.NDEBUG:
+        print("Current node finger table updated", str(res))
+    return "Finger table updated"
 
 
 def server_start():

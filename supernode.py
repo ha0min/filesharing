@@ -9,6 +9,8 @@
 @Contact: haomin.cheng@outlook.com
 
 """
+import math
+
 import requests
 import config
 import utils.util
@@ -131,7 +133,6 @@ def save_node_list_to_s3(node_list):
     update_local_node_list()
 
 
-
 def write_leader_config(data):
     s3 = boto3.client("s3")
     s3.put_object(Body=data.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
@@ -198,7 +199,7 @@ def get_all_available_servers():
     :return:
     """
     available_servers = s3_server_bucket.objects.all()
-    print(cyan("Available servers" ), str(available_servers))
+    print(cyan("Available servers"), str(available_servers))
     return available_servers
 
 
@@ -283,6 +284,7 @@ def init_server():
 
     signal.signal(signal.SIGINT, signal_handler)
 
+
 # -----------------------------------------------------
 # functions for the chord ring
 def bootstrap_join_func(new_node):
@@ -293,7 +295,7 @@ def bootstrap_join_func(new_node):
     """
     while common.server_node_joining:
         print(red("[Bootstrap Join]"), "Other node has not finished joining the Chord. Waiting...")
-        time.sleep(0.3)
+        time.sleep(0.5)
 
     common.server_node_joining = True
 
@@ -358,7 +360,9 @@ def bootstrap_join_func(new_node):
 
     if config.NDEBUG:
         print("Master completed join of the node")
-    #TODO add join procedure
+
+    threading.Thread(target=update_finger_tables_on_join(), args=(new_node,)).start()
+    # TODO add join procedure
     # try:
     #     response = requests.post(config.ADDR + new_node["ip"] + ":" + new_node["port"] + endpoints.chord_join_procedure,
     #                              json={"prev": {"uid": prev["uid"], "ip": prev["ip"], "port": prev["port"]},
@@ -383,3 +387,102 @@ def bootstrap_join_func(new_node):
     save_node_list_to_s3(common.mids)
     common.server_node_joining = False
     return json.dumps(response)
+
+
+def update_finger_tables_on_join(new_node):
+    """
+    This function updates the finger tables of affected nodes in the network when a new node joins.
+    :param new_node:
+    :return:
+    """
+    while common.server_updating_finger_table:
+        print(red("Updating finger tables clogged.. waiting for finger table update to finish..."))
+        time.sleep(1)
+    common.server_updating_finger_table = True
+    update_local_node_list()
+    new_node_id = int(new_node['uid'], 16)
+    N = len(common.mids)
+    m = int(math.ceil(math.log2(N + 1)))  # Recalculate m as the number of nodes has changed
+
+    # Insert the new node in the sorted list of nodes
+    common.mids.append(new_node)
+    common.mids.sort(key=lambda x: int(x['uid'], 16))
+
+    # Update finger tables of affected nodes
+    for node in common.mids:
+        if node == new_node:
+            continue
+
+        node_id = int(node['uid'], 16)
+        for k in range(1, m + 1):
+            start = (node_id + 2 ** (k - 1)) % 2 ** m
+            if new_node_id >= start or new_node_id < node_id:
+                finger_table = common.finger_tables.get(node['uid'], [])
+                if k <= len(finger_table):
+                    # Update the existing entry
+                    finger_table[k - 1] = {"start": start, "node": new_node}
+                else:
+                    # Add a new entry
+                    finger_table.append({"start": start, "node": new_node})
+
+                common.finger_tables[node['uid']] = finger_table
+                send_finger_table_update(node, finger_table)
+
+    # Calculate finger table for the new node
+    common.finger_tables[new_node['uid']] = generate_finger_table_for_node(new_node, N, m)
+    send_finger_table_update(new_node, common.finger_tables[new_node['uid']])
+    common.server_updating_finger_table = False
+
+
+def generate_finger_table_for_node(node, N, m):
+    """
+    This function generates the finger table for a given node.
+    :param node:
+    :param N:
+    :param m:
+    :return:
+    """
+    finger_table = []
+    node_id = int(node['uid'], 16)
+
+    for k in range(1, m + 1):
+        start = (node_id + 2 ** (k - 1)) % 2 ** m
+        successor = find_successor(start, common.mids)
+        finger_table.append({"start": start, "node": successor})
+
+    return finger_table
+
+
+def find_successor(start, nodes):
+    """
+    This function finds the successor of a given start value in a list of nodes.
+    :param start:
+    :param nodes:
+    :return:
+    """
+    # Assuming nodes are sorted by UID
+    for node in nodes:
+        node_id = int(node['uid'], 16)
+        if start <= node_id:
+            return node
+    # If not found, return the first node (circular)
+    return nodes[0]
+
+
+def send_finger_table_update(node, finger_table):
+    """
+    This function sends the finger table update to a node.
+    :param node:
+    :param finger_table:
+    :return:
+    """
+    try:
+        response = requests.post(config.ADDR + node["ip"] + ":" + node["port"] + endpoints.node_update_finger_table,
+                                 json={"finger_table": finger_table})
+        if response.status_code == 200 and response.text == "finger table updated":
+            if config.BDEBUG:
+                print(blue(f"Updated finger table of {node['uid']} successfully"))
+        else:
+            print(RED("Something went wrong while updating finger table"))
+    except:
+        print("Something went wrong with finger table update")

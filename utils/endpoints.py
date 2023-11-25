@@ -36,3 +36,6 @@ node_update_neighbours = '/node/update_neighbours'
 
 global replic_nodes_list # POST: returns list of replicate nodes of the node
 replic_nodes_list = '/node/replic_nodes_list'
+
+global node_update_finger_table # POST: updates the finger table of the node {node uid, ip, port}
+node_update_finger_table = '/node/update_finger_table'
