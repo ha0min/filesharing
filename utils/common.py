@@ -32,3 +32,6 @@ nids = []		# list of dicts, first element is the previous node and second elemen
 # variables for async function
 global server_starting
 server_starting = False
+
+global server_node_joining
+server_node_joining = False

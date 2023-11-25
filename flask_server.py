@@ -14,7 +14,7 @@ import socket
 
 from flask import Flask, json, request
 
-from supernode import init_server
+from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash
@@ -45,13 +45,13 @@ def ping():
     return "pong"
 
 
-@app.route(endpoints.join_bootstrap , methods = ['POST'])										# join(nodeID)
+@app.route(endpoints.join_bootstrap, methods=['POST'])  # join(nodeID)
 def boot_join():
-	if common.boot:
-		new_node = request.form.to_dict()
-		return bootstrap_join_func(new_node)
-	else:
-		print(red("This is not the bootstrap node..."))
+    if common.boot:
+        new_node = request.form.to_dict()
+        return bootstrap_join_func(new_node)
+    else:
+        print(red(f"This is not the bootstrap node and not allowed for {endpoints.join_bootstrap}."))
 
 
 def server_start():
