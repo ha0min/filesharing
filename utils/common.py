@@ -55,7 +55,7 @@ my_file_list = []
 
 global node_file_dir
 global node_upload_file_dir
-global node_my_file_dir
+global node_host_file_dir
 global node_replica_file_dir
 
 
@@ -78,3 +78,9 @@ is_data_uploading = False
 
 global is_data_replicating
 is_data_replicating = False
+
+global is_sending_file
+is_sending_file = False
+
+global already_upload_to_chord # true if one node request my uploaded file to host
+already_upload_to_chord = False

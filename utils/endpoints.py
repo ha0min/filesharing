@@ -40,5 +40,14 @@ replic_nodes_list = '/node/replic_nodes_list'
 global node_update_finger_table # POST: updates the finger table of the node {node uid, ip, port}
 node_update_finger_table = '/node/update_finger_table'
 
-global node_new_file # POST: adds a new file to the node {file name, file content}
-node_new_file = '/node/new_file'
+global node_add_new_file # POST: adds a new file to the node {file name, file content}
+node_add_new_file = '/node/new_file'
+
+global request_upload_file_to_host # POST: request to upload a file to the node {file name, file content}
+request_upload_file_to_host = '/node/request_upload_file'
+
+global file_from_upload_node # POST: adds a new file to the node {file name, file content}
+file_from_upload_node = '/node/file_from_upload'
+
+global find_file_host_node # POST: find the host node of the file {file name}
+find_file_host_node = '/node/find_file_host_node'

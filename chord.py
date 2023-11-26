@@ -148,131 +148,122 @@ def insert_file_to_chord(data):
     """
     insert file to the chord
     :param data: {"who_uploads": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
-                                 "file_path", "file_name"}
+                                 "file", "file_name"}
     :return:
     """
 
-    syllabus_file_path = data["file_path"]
-    syllabus_file_name = data["file_name"]
-    who_is = data["who_uploads"]
-    if (who_is["uid"] != common.my_id and common.started_insert) or (
-            common.started_insert and who_is["uid"] == common.my_id and common.last_replica_flag == True):
-        # i am the node who requested the insertion of the song and i am here because the node who has the song sent it to me
-        if config.NDEBUG:
-            print(yellow("Got response directly from the source: ") + who_is["uid"])
-            print(yellow("and it contains: ") + str(syllabus_file))
-            print(yellow("sending confirmation to source node"))
-        common.q_responder = who_is["uid"]
-        common.q_response = syllabus_file["key"]
-        common.started_insert = False
-        common.got_insert_response = True
+    hashedname = data["filename"]
+    who_uploads = data["who_uploads"]
 
-        common.last_replica_flag = False
-        return common.my_id + " " + syllabus_file["key"]
-
-    hashed_key = hash(syllabus_file["key"])
-    if config.NDEBUG:
-        print(yellow("Got request to insert song: {}").format(syllabus_file))
-        print(yellow("From node: ") + who_is["uid"])
-        print(yellow("Song Hash: ") + hashed_key)
-    previous_ID = common.nids[0]["uid"]
-    next_ID = common.nids[1]["uid"]
-    self_ID = common.my_id
-    who = 1
-    if previous_ID > self_ID and next_ID > self_ID:
-        who = 0  # i have the samallest id
-    elif previous_ID < self_ID and next_ID < self_ID:
-        who = 2  # i have the largest id
-
-    if (hashed_key > previous_ID and hashed_key <= self_ID and who != 0) or (
-            hashed_key > previous_ID and hashed_key > self_ID and who == 0) or (hashed_key <= self_ID and who == 0):
-        # song goes in me
-        song_to_be_inserted = found(syllabus_file["key"])
-        if (song_to_be_inserted):
-            common.songs.remove(song_to_be_inserted)
-            if config.NDEBUG:
-                print(yellow('Updating song: {}').format(song_to_be_inserted))
-                print(yellow("To song: 	{}").format(syllabus_file))
-                if config.vNDEBUG:
-                    print(yellow("My songs are now:"))
-                    print(common.songs)
-        common.songs.append(
-            {"key": syllabus_file["key"], "value": syllabus_file["value"]})  # inserts the (updated) pair of (key,value)
-        if config.NDEBUG:
-            print(yellow('Inserted song: {}').format(syllabus_file))
-            if config.vNDEBUG:
-                print(yellow("My songs are now:"))
-                print(common.songs)
-
-        if (common.replication == "eventual" and common.k != 1):
-            ploads = {"who": {"uid": who_is["uid"], "ip": who_is["ip"], "port": who_is["port"]},
-                      "song": {"key": syllabus_file["key"], "value": syllabus_file["value"]}, "chain_length": {"k": common.k - 1}}
-            t = Thread(target=eventual_insert, args=[ploads])
-            t.start()
-
-        elif (common.replication == "linear" and common.k != 1):
-            ploads = {"who": {"uid": who_is["uid"], "ip": who_is["ip"], "port": who_is["port"]},
-                      "song": {"key": syllabus_file["key"], "value": syllabus_file["value"]}, "chain_length": {"k": common.k - 1}}
-            linear_result = requests.post(
-                config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + ends.chain_insert, json=ploads)
-            return "Right node insert song"
-
-        if common.started_insert:  # it means i requested the insertion of the song, and i am responsible for it
-            common.q_response = syllabus_file["key"]
-            common.q_responder = who_is["uid"]
-            common.started_insert = False
-            common.got_insert_response = True
-            if config.NDEBUG:
-                print(cyan("Special case ") + "it was me who made the request and i also have the song")
-                print(yellow("Returning to myself..."))
-            return "sent it to myself"
-
-        try:  # send the key of the song to the node who requested the insertion
-            result = requests.post(config.ADDR + who_is["ip"] + ":" + who_is["port"] + ends.n_insert,
-                                   json={"who": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
-                                         "song": syllabus_file})
-            if result.status_code == 200 and result.text.split(" ")[0] == who_is["uid"]:
-                if config.NDEBUG:
-                    print("Got response from the node who requested the insertion of the song: " + yellow(
-                        result.text))
-                return self_ID + syllabus_file["key"]
-            else:
-                print(
-                    red("node who requested the insertion of the song respond incorrectly, or something went wrong with the satus code (if it is 200 in prev/next node, he probably responded incorrectly)"))
-                return "Bad status code: " + result.status_code
-        except:
-            print(red("node who requested the insertion of the song dindnt respond at all"))
-            return "Exception raised node who requested the insertion of the song dindnt respond"
-
-
-    elif ((hashed_key > self_ID and who != 0) or (
-            hashed_key > self_ID and hashed_key < previous_ID and who == 0) or (
-                  hashed_key <= next_ID and who != 0) or (
-                  hashed_key <= previous_ID and hashed_key > next_ID and who == 2)):
-        # forward song to next
-        if config.NDEBUG:
-            print(yellow('forwarding to next..'))
-        try:
-            result = requests.post(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] +
-                                   endpoints.n_insert,
-                                   json={"who": who_is, "song": syllabus_file})
-            if result.status_code == 200:
-                if config.NDEBUG:
-                    print("Got response from next: " + yellow(result.text))
-                return result.text
-            else:
-                print(red("Something went wrong while trying to forward insert to next"))
-                return "Bad status code: " + result.status_code
-        except:
-            print(red("Next is not responding to my call..."))
-            return "Exception raised while forwarding to next"
-        return self_ID
+    closest_node = determine_correct_node(hashedname, common.my_finger_table, common.my_uid)
+    if closest_node['uid'] == common.my_uid:
+        print("i am responsible for this file")
+        # request the file from the node uploads the file
+        response = requests.post(
+            config.ADDR + who_uploads["ip"] + ":" + who_uploads["port"] + endpoints.request_upload_file_to_host,
+            json={"filename": hashedname, "request_node": {"uid": common.my_uid, "ip": common.my_ip,
+                                                             "port": common.my_port}})
+        if response.status_code == 200 and response.text == "File sent to the node":
+            print(red(f"i have send request to {who_uploads['ip']}:{who_uploads['port']} to host the file"))
     else:
-        print(red("The key hash didnt match any node...consider thinking again about your skills"))
-        return "Bad skills"
+        # Forward the file query to the responsible node to find the node in the chord that will host the file
+        forward_file_host_query_to_node(hashedname, who_uploads, closest_node)
 
 
-def eventual_insert(ploads):
-    r = requests.post(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + ends.chain_insert,
-                      json=ploads)
-    return r.text
+def forward_file_host_query_to_node(filename, who_uploads, closest_node):
+    """
+    Forward the file query to the responsible node to find the node in the chord that will host the file
+    :param filename: hashed filename
+    :param who_uploads: {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port}
+    :param closest_node: {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port}
+    :return:
+    """
+    # i am not responsible for this file, forward the request to my closet node to
+    # determine the node that will host the file
+
+    response = requests.post(
+        config.ADDR + closest_node["ip"] + ":" + closest_node["port"] + endpoints.find_file_host_node,
+        json={"filename": filename, "who_uploads": who_uploads})
+    if response.status_code == 200 and response.text == "I am finding the responsible node":
+        print(red(f"i have send request to {closest_node['ip']}:{closest_node['port']} to find the "
+                  f"node that will host the file"))
+
+
+
+def determine_correct_node(hashed_key, finger_table, self_ID):
+    """
+    Determine the correct node to store the file based on the hashed key using the finger table.
+    :param hashed_key: Hashed key of the file name.
+    :param finger_table: Finger table of the current node.
+    :param self_ID: ID of the current node.
+    :return: node: {uid, ip, port}
+    """
+    hashed_key_int = int(hashed_key, 16)
+    closest_preceding_finger = {'uid': self_ID, 'ip': common.my_ip, 'port': common.my_port}
+
+    # Check if the hashed key falls within the current node's responsibility
+    next_node_ID = int(common.nids[1]['uid'], 16)
+    if is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
+        if config.NDEBUG:
+            print(("[determine_correct_node] current node is responsible: " + blue(str(self_ID))))
+        return {'node': self_ID, 'ip': common.my_ip, 'port': common.my_port}
+
+    # Iterate through the finger table to find the responsible node
+    for entry in finger_table:
+        node_id = int(entry['node']['uid'], 16)
+        if is_in_range(hashed_key_int, self_ID, node_id):
+            if config.NDEBUG:
+                print(("[determine_correct_node] responsible node found: " + blue(str(node_id))))
+            return entry['node']
+
+    # Fall back to the next neighbor if no suitable node is found in the finger table
+    if config.NDEBUG:
+        print(("[determine_correct_node] no responsible node found in finger table, returning next neighbor: " +
+               blue(str(next_node_ID))))
+    return finger_table[-1]['node']
+
+
+def is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
+    """
+    Check if the current node is responsible for the given key in a circular ID space.
+    """
+    if self_ID < next_node_ID:
+        return self_ID < hashed_key_int <= next_node_ID
+    return self_ID < hashed_key_int or hashed_key_int <= next_node_ID
+
+
+def is_in_range(key, self_ID, node_id):
+    """
+    Check if a key is in the range (self_ID, node_id) in a circular ID space.
+    """
+    if self_ID < node_id:
+        return self_ID < key < node_id
+    return self_ID < key or key < node_id
+
+
+def send_upload_file_to_node(request_node, filepath, filename):
+    while common.is_sending_file:
+        print(red(["[send_upload_file_to_node] waiting for previous to be done..."]))
+        time.sleep(1)
+
+    common.is_sending_file = True
+    if config.NDEBUG:
+        print(f"[send_upload_file_to_node] sending file {filepath} to node: " + blue(str(request_node)))
+    # get the node ip and port
+    node_ip = request_node['ip']
+    node_port = request_node['port']
+
+    # send file to the node
+    files = {'file': open(filepath, 'rb')}
+    response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.file_from_upload_node, files=files,
+                             data={"filename": filename})
+
+    if response.status_code == 200 and response.text == "File saved":
+        print(red("File sent to the node"))
+        res = 'File sent to the node'
+    else:
+        print(red("File sending failed"))
+        res = 'File sending failed'
+    common.is_sending_file = False
+
+    return res

@@ -9,10 +9,12 @@
 @Contact: haomin.cheng@outlook.com
 
 """
+import os
 import re
 import sys
 import socket
 import threading
+import time
 
 from flask import Flask, json, request, jsonify
 from werkzeug.utils import secure_filename
@@ -22,7 +24,7 @@ from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
-    node_update_finger_table_func, insert_file_to_chord
+    node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node
 
 app = Flask(__name__)
 
@@ -136,17 +138,19 @@ def update_finger_table():
     return node_update_finger_table_func(res)
 
 
-@app.route(endpoints.node_new_file, methods=['POST'])
+@app.route(endpoints.node_add_new_file, methods=['POST'])
 def upload_file():
     if 'file' not in request.files or 'name' not in request.form:
-        return 'Please provide a file and a course title', 400
+        return 'Please provide a file and a course_name', 400
 
     file = request.files['file']
-    filename = request.form.get('name', '')
+    filename = request.form.get('course_name', '')
 
     # Check if the file format is correct (PDF)
     if not allowed_file(file.filename):
         return jsonify(message='File type not allowed, only PDFs are accepted'), 400
+
+    filename = secure_filename(filename)
 
     # Check if the filename matches the required format (4 letters and numbers)
     if not re.match(r'^[A-Za-z]{4}\d+$', filename):
@@ -154,19 +158,23 @@ def upload_file():
 
     common.is_data_uploading = True
 
-    filename = secure_filename(filename)
-    filepath = common.node_upload_file_dir + filename + '.pdf'
+    hashed_filename = hash(filename)
+    filepath = common.node_upload_file_dir + hashed_filename + '.pdf'
     file.save(filepath)
 
     if config.NDEBUG:
-        print(yellow("[node_new_file] File is saved in node: " + filepath))
-        print(yellow("[node_new_file] starting storing file in chord..."))
+        print(yellow(
+            f"[node_add_new_file] Upload File is saved in my upload folder: {filename}, hashed {hashed_filename}"))
+        print(yellow("[node_add_new_file] starting storing file in chord..."))
 
-    t = threading.Thread(target=upload_file_thread, args=(filepath, filename))
+    t = threading.Thread(target=upload_file_thread, args=hashed_filename)
     t.start()
 
-    if common.
+    while not common.already_upload_to_chord:
+        print(yellow("waiting for a node in the chord to request my uploaded file to host..."))
+        time.sleep(0.3)
 
+    common.already_upload_to_chord = False
     # Handle file storage in Chord DHT
     # TODO: implement this
     # store_file_in_chord(filepath, filename)
@@ -174,20 +182,106 @@ def upload_file():
     return jsonify(message='File successfully uploaded'), 200
 
 
-def upload_file_thread(filepath, filename):
+def upload_file_thread(filename):
     return insert_file_to_chord({"who_uploads": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
-                                 "filepath": filepath, "filename": filename})
+                                 "filename": filename})
 
 
-@app.route('/download/<filename>', methods=['GET'])
-def download_file(filename):
-    # Retrieve file path from Chord DHT
-    filepath = get_file_from_chord(filename)
+@app.route(endpoints.request_upload_file_to_host, methods=['POST'])
+def request_upload_file():
+    """
+    Request a file upload to the node.
+    """
+    if 'filename' not in request.form:
+        return 'Please provide a filename', 400
 
-    if filepath and os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
-    else:
+    if 'request_node' not in request.form:
+        return 'Please provide a request node', 400
+    # filename should be hashed already
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    # check file exist in my upload folder
+    filepath = common.node_upload_file_dir + filename + '.pdf'
+    if not os.path.exists(filepath):
         return 'File not found', 404
+
+    request_node = request.form.get('request_node', '')
+    print(red(f"The node {request_node['uid']} in chord host the file {filename} in my upload folder"))
+
+    if config.NDEBUG:
+        print(yellow(f"[request_upload_file] Requested file: {filename} from {str(request_node)}"))
+
+    # send file to the node
+    response = send_upload_file_to_node(filepath, request_node, filename)
+
+    if config.NDEBUG:
+        print(yellow(f"[request_upload_file] Response from node: {str(response)}"))
+
+    # the file is sent to the chord, i can continue to upload other files
+    common.already_upload_to_chord = True
+    if response == 'File sent to the node':
+        return 'File sent to the node', 200
+    else:
+        return 'File not sent to the node', 400
+
+
+@app.route(endpoints.file_from_upload_node, methods=['POST'])
+def file_from_upload_node():
+    """
+    a file send from upload node, i am responsible for it.
+    """
+    if 'file' not in request.files or 'filename' not in request.form:
+        return 'Please provide a file and a filename', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    if config.NDEBUG:
+        print(yellow(f"[file_from_upload_node] Requested file: {filename}"))
+
+    # save the file in my host folder
+    filepath = common.node_host_file_dir + filename + '.pdf'
+    file = request.files['file']
+    file.save(filepath)
+
+    return 'File saved', 200
+
+
+@app.route(endpoints.find_file_host_node, methods=['POST'])
+def find_file_host_node():
+    """
+    a node is not responsible for a file, and i was the closest node he found, so i will find
+    the node who is responsible
+    """
+
+    if 'filename' not in request.form or 'who_uploads' not in request.form:
+        return 'Please provide a filename', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    who_uploads = request.form.get('who_uploads', '')
+
+    if config.NDEBUG:
+        print(yellow(f"[find_file_host_node] Requested file: {filename}"))
+
+    # find the node who is responsible for the file in a new thread
+    t = threading.Thread(target=insert_file_to_chord, args=({"filename": filename, "who_uploads": who_uploads},))
+    t.start()
+
+    return "I am finding the responsible node", 200
+
+
+# @app.route('/download/<filename>', methods=['GET'])
+# def download_file(filename):
+#     # Retrieve file path from Chord DHT
+#     filepath = get_file_from_chord(filename)
+#
+#     if filepath and os.path.exists(filepath):
+#         return send_file(filepath, as_attachment=True)
+#     else:
+#         return 'File not found', 404
 
 
 def server_start():
@@ -205,7 +299,7 @@ def server_start():
     common.my_ip = get_my_ip()
     common.my_uid = hash(common.my_ip + ":" + common.my_port)
     common.node_file_dir = config.FILE_DIR + common.my_uid + "/"
-    common.node_my_file_dir = common.node_file_dir + "my_files/"
+    common.node_host_file_dir = common.node_file_dir + "host_files/"
     common.node_replicate_file_dir = common.node_file_dir + "replicate_files/"
     common.node_upload_file_dir = common.node_file_dir + "upload_files/"
     if len(sys.argv) == 4 and sys.argv[3] in ("-b", "-B"):
