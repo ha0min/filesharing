@@ -54,6 +54,7 @@ global my_file_list
 my_file_list = []
 
 global node_file_dir
+global node_upload_file_dir
 global node_my_file_dir
 global node_replica_file_dir
 
@@ -71,3 +72,9 @@ server_updating_finger_table = False
 
 global node_updating_finger_table
 node_updating_finger_table = False
+
+global is_data_uploading
+is_data_uploading = False
+
+global is_data_replicating
+is_data_replicating = False

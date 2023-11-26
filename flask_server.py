@@ -9,17 +9,20 @@
 @Contact: haomin.cheng@outlook.com
 
 """
+import re
 import sys
 import socket
+import threading
 
-from flask import Flask, json, request
+from flask import Flask, json, request, jsonify
+from werkzeug.utils import secure_filename
 
 import config
 from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
-    node_update_finger_table_func
+    node_update_finger_table_func, insert_file_to_chord
 
 app = Flask(__name__)
 
@@ -32,7 +35,6 @@ def home():
          "mids": common.mids,
          "nids": common.nids}
     )
-
 
 
 @app.route(endpoints.ping, methods=['GET'])
@@ -134,6 +136,60 @@ def update_finger_table():
     return node_update_finger_table_func(res)
 
 
+@app.route(endpoints.node_new_file, methods=['POST'])
+def upload_file():
+    if 'file' not in request.files or 'name' not in request.form:
+        return 'Please provide a file and a course title', 400
+
+    file = request.files['file']
+    filename = request.form.get('name', '')
+
+    # Check if the file format is correct (PDF)
+    if not allowed_file(file.filename):
+        return jsonify(message='File type not allowed, only PDFs are accepted'), 400
+
+    # Check if the filename matches the required format (4 letters and numbers)
+    if not re.match(r'^[A-Za-z]{4}\d+$', filename):
+        return jsonify(message='Filename format is incorrect'), 400
+
+    common.is_data_uploading = True
+
+    filename = secure_filename(filename)
+    filepath = common.node_upload_file_dir + filename + '.pdf'
+    file.save(filepath)
+
+    if config.NDEBUG:
+        print(yellow("[node_new_file] File is saved in node: " + filepath))
+        print(yellow("[node_new_file] starting storing file in chord..."))
+
+    t = threading.Thread(target=upload_file_thread, args=(filepath, filename))
+    t.start()
+
+    if common.
+
+    # Handle file storage in Chord DHT
+    # TODO: implement this
+    # store_file_in_chord(filepath, filename)
+
+    return jsonify(message='File successfully uploaded'), 200
+
+
+def upload_file_thread(filepath, filename):
+    return insert_file_to_chord({"who_uploads": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
+                                 "filepath": filepath, "filename": filename})
+
+
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    # Retrieve file path from Chord DHT
+    filepath = get_file_from_chord(filename)
+
+    if filepath and os.path.exists(filepath):
+        return send_file(filepath, as_attachment=True)
+    else:
+        return 'File not found', 404
+
+
 def server_start():
     """
     Entry point of the flask server.
@@ -151,6 +207,7 @@ def server_start():
     common.node_file_dir = config.FILE_DIR + common.my_uid + "/"
     common.node_my_file_dir = common.node_file_dir + "my_files/"
     common.node_replicate_file_dir = common.node_file_dir + "replicate_files/"
+    common.node_upload_file_dir = common.node_file_dir + "upload_files/"
     if len(sys.argv) == 4 and sys.argv[3] in ("-b", "-B"):
         print("I am the Bootstrap Node with ip: " + yellow(
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
@@ -168,7 +225,7 @@ def server_start():
         # x = threading.Thread(target=node_initial_join, args=[])
         # x.start()
 
-    app.run(host=common.my_ip, port=common.my_port, debug=True, use_reloader=False)
+    app.run(host=common.my_ip, port=int(common.my_port), debug=True, use_reloader=False)
 
 
 def wrong_input_format():
@@ -178,6 +235,10 @@ def wrong_input_format():
         "-p port_to_open\n -k replication_factor (<= number of nodes)\n -c consistency_type ((linear,l) or (eventual,"
         "e))\n -b for bootstrap node only"))
     exit(0)
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ['pdf']
 
 
 def get_my_ip():

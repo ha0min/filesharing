@@ -12,6 +12,7 @@
 import hashlib
 import json
 import time
+from threading import Thread
 
 import requests
 
@@ -141,3 +142,137 @@ def node_update_finger_table_func(res):
 # ----------------------Syllabus Function---------------------------------------
 def hash(key):
     return hashlib.sha1(key.encode('utf-8')).hexdigest()
+
+
+def insert_file_to_chord(data):
+    """
+    insert file to the chord
+    :param data: {"who_uploads": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
+                                 "file_path", "file_name"}
+    :return:
+    """
+
+    syllabus_file_path = data["file_path"]
+    syllabus_file_name = data["file_name"]
+    who_is = data["who_uploads"]
+    if (who_is["uid"] != common.my_id and common.started_insert) or (
+            common.started_insert and who_is["uid"] == common.my_id and common.last_replica_flag == True):
+        # i am the node who requested the insertion of the song and i am here because the node who has the song sent it to me
+        if config.NDEBUG:
+            print(yellow("Got response directly from the source: ") + who_is["uid"])
+            print(yellow("and it contains: ") + str(syllabus_file))
+            print(yellow("sending confirmation to source node"))
+        common.q_responder = who_is["uid"]
+        common.q_response = syllabus_file["key"]
+        common.started_insert = False
+        common.got_insert_response = True
+
+        common.last_replica_flag = False
+        return common.my_id + " " + syllabus_file["key"]
+
+    hashed_key = hash(syllabus_file["key"])
+    if config.NDEBUG:
+        print(yellow("Got request to insert song: {}").format(syllabus_file))
+        print(yellow("From node: ") + who_is["uid"])
+        print(yellow("Song Hash: ") + hashed_key)
+    previous_ID = common.nids[0]["uid"]
+    next_ID = common.nids[1]["uid"]
+    self_ID = common.my_id
+    who = 1
+    if previous_ID > self_ID and next_ID > self_ID:
+        who = 0  # i have the samallest id
+    elif previous_ID < self_ID and next_ID < self_ID:
+        who = 2  # i have the largest id
+
+    if (hashed_key > previous_ID and hashed_key <= self_ID and who != 0) or (
+            hashed_key > previous_ID and hashed_key > self_ID and who == 0) or (hashed_key <= self_ID and who == 0):
+        # song goes in me
+        song_to_be_inserted = found(syllabus_file["key"])
+        if (song_to_be_inserted):
+            common.songs.remove(song_to_be_inserted)
+            if config.NDEBUG:
+                print(yellow('Updating song: {}').format(song_to_be_inserted))
+                print(yellow("To song: 	{}").format(syllabus_file))
+                if config.vNDEBUG:
+                    print(yellow("My songs are now:"))
+                    print(common.songs)
+        common.songs.append(
+            {"key": syllabus_file["key"], "value": syllabus_file["value"]})  # inserts the (updated) pair of (key,value)
+        if config.NDEBUG:
+            print(yellow('Inserted song: {}').format(syllabus_file))
+            if config.vNDEBUG:
+                print(yellow("My songs are now:"))
+                print(common.songs)
+
+        if (common.replication == "eventual" and common.k != 1):
+            ploads = {"who": {"uid": who_is["uid"], "ip": who_is["ip"], "port": who_is["port"]},
+                      "song": {"key": syllabus_file["key"], "value": syllabus_file["value"]}, "chain_length": {"k": common.k - 1}}
+            t = Thread(target=eventual_insert, args=[ploads])
+            t.start()
+
+        elif (common.replication == "linear" and common.k != 1):
+            ploads = {"who": {"uid": who_is["uid"], "ip": who_is["ip"], "port": who_is["port"]},
+                      "song": {"key": syllabus_file["key"], "value": syllabus_file["value"]}, "chain_length": {"k": common.k - 1}}
+            linear_result = requests.post(
+                config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + ends.chain_insert, json=ploads)
+            return "Right node insert song"
+
+        if common.started_insert:  # it means i requested the insertion of the song, and i am responsible for it
+            common.q_response = syllabus_file["key"]
+            common.q_responder = who_is["uid"]
+            common.started_insert = False
+            common.got_insert_response = True
+            if config.NDEBUG:
+                print(cyan("Special case ") + "it was me who made the request and i also have the song")
+                print(yellow("Returning to myself..."))
+            return "sent it to myself"
+
+        try:  # send the key of the song to the node who requested the insertion
+            result = requests.post(config.ADDR + who_is["ip"] + ":" + who_is["port"] + ends.n_insert,
+                                   json={"who": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
+                                         "song": syllabus_file})
+            if result.status_code == 200 and result.text.split(" ")[0] == who_is["uid"]:
+                if config.NDEBUG:
+                    print("Got response from the node who requested the insertion of the song: " + yellow(
+                        result.text))
+                return self_ID + syllabus_file["key"]
+            else:
+                print(
+                    red("node who requested the insertion of the song respond incorrectly, or something went wrong with the satus code (if it is 200 in prev/next node, he probably responded incorrectly)"))
+                return "Bad status code: " + result.status_code
+        except:
+            print(red("node who requested the insertion of the song dindnt respond at all"))
+            return "Exception raised node who requested the insertion of the song dindnt respond"
+
+
+    elif ((hashed_key > self_ID and who != 0) or (
+            hashed_key > self_ID and hashed_key < previous_ID and who == 0) or (
+                  hashed_key <= next_ID and who != 0) or (
+                  hashed_key <= previous_ID and hashed_key > next_ID and who == 2)):
+        # forward song to next
+        if config.NDEBUG:
+            print(yellow('forwarding to next..'))
+        try:
+            result = requests.post(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] +
+                                   endpoints.n_insert,
+                                   json={"who": who_is, "song": syllabus_file})
+            if result.status_code == 200:
+                if config.NDEBUG:
+                    print("Got response from next: " + yellow(result.text))
+                return result.text
+            else:
+                print(red("Something went wrong while trying to forward insert to next"))
+                return "Bad status code: " + result.status_code
+        except:
+            print(red("Next is not responding to my call..."))
+            return "Exception raised while forwarding to next"
+        return self_ID
+    else:
+        print(red("The key hash didnt match any node...consider thinking again about your skills"))
+        return "Bad skills"
+
+
+def eventual_insert(ploads):
+    r = requests.post(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + ends.chain_insert,
+                      json=ploads)
+    return r.text
