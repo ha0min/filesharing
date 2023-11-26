@@ -118,8 +118,18 @@ def update_replicate():
 
 @app.route(endpoints.node_update_neighbours, methods=['POST'])  # update(nodeID)
 def chord_update_neighbours():
+    """
+    Update the neighbours of the node.
+    :return:
+    """
+    while common.node_updating_neighbor:
+        print(red("i am updating neighbours, wait..."))
+        time.sleep(0.3)
+    common.node_updating_neighbor = True
     new_neighbours = request.get_json()
-    return node_update_neighbours_func(new_neighbours)
+    response = node_update_neighbours_func(new_neighbours)
+    common.node_updating_neighbor = False
+    return response
 
 
 @app.route(endpoints.node_update_finger_table, methods=['POST'])
@@ -244,6 +254,9 @@ def file_from_upload_node():
     filepath = common.node_host_file_dir + filename + '.pdf'
     file = request.files['file']
     file.save(filepath)
+
+    #update host file list
+    common.host_file_list.append(filename)
 
     return 'File saved', 200
 

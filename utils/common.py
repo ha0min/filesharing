@@ -50,8 +50,8 @@ finger_tables = []	# list of dicts, each dict is a finger table
 # The File global variable
 global replica_file_list
 replica_file_list = []
-global my_file_list
-my_file_list = []
+global host_file_list
+host_file_list = []
 
 global node_file_dir
 global node_upload_file_dir
@@ -72,6 +72,9 @@ server_updating_finger_table = False
 
 global node_updating_finger_table
 node_updating_finger_table = False
+
+global node_updating_neighbor
+node_updating_neighbor = False
 
 global is_data_uploading
 is_data_uploading = False

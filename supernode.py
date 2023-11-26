@@ -332,9 +332,11 @@ def bootstrap_join_func(new_node):
             common.mids.append(new_node)
             break
     new_node_idx = common.mids.index(new_node)
+    save_node_list_to_s3(common.mids)
+
     if config.vBDEBUG:
         print(blue(common.mids))
-        print(blue("new node possition in common.mids: " + str(new_node_idx)))
+        print(blue("new node position in common.mids: " + str(new_node_idx)))
     prev_of_prev = common.mids[new_node_idx - 2] if new_node_idx >= 2 else (
         common.mids[-1] if new_node_idx >= 1 else common.mids[-2])
     prev = common.mids[new_node_idx - 1] if new_node_idx >= 1 else common.mids[-1]
@@ -343,7 +345,7 @@ def bootstrap_join_func(new_node):
         common.mids[0] if new_node_idx < len(common.mids) - 1 else common.mids[1])
 
     response_p = requests.post(config.ADDR + prev["ip"] + ":" + prev["port"] + endpoints.node_update_neighbours,
-                               json={"prev": prev_of_prev, "next": new_node})
+                               json={"prev": prev_of_prev, "next": new_node, "change": "next"})
     if response_p.status_code == 200 and response_p.text == "new neighbours set":
         if config.BDEBUG:
             print(blue("Updated previous neighbour successfully"))
@@ -351,7 +353,7 @@ def bootstrap_join_func(new_node):
         print(RED("Something went wrong while updating previous node list"))
     print(config.ADDR, next["ip"], ":", next["port"], endpoints.node_update_neighbours)
     response_n = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
-                               json={"prev": new_node, "next": next_of_next})
+                               json={"prev": new_node, "next": next_of_next, "change": "prev"})
     if response_n.status_code == 200 and response_n.text == "new neighbours set":
         if config.BDEBUG:
             print(blue("Updated next neighbour successfully"))
@@ -361,7 +363,7 @@ def bootstrap_join_func(new_node):
     if config.NDEBUG:
         print("Master completed join of the node")
 
-    threading.Thread(target=update_finger_tables_on_join(), args=(new_node,)).start()
+    threading.Thread(target=update_finger_tables_on_join, args=(new_node,), daemon=True).start()
     # TODO add join procedure
     # try:
     #     response = requests.post(config.ADDR + new_node["ip"] + ":" + new_node["port"] + endpoints.chord_join_procedure,
@@ -384,7 +386,6 @@ def bootstrap_join_func(new_node):
             "port": next["port"]
         }
     }
-    save_node_list_to_s3(common.mids)
     common.server_node_joining = False
     return json.dumps(response)
 
@@ -400,9 +401,20 @@ def update_finger_tables_on_join(new_node):
         time.sleep(1)
     common.server_updating_finger_table = True
     update_local_node_list()
+
+
     new_node_id = int(new_node['uid'], 16)
     N = len(common.mids)
     m = int(math.ceil(math.log2(N + 1)))  # Recalculate m as the number of nodes has changed
+
+    # special case: if the finger table is lost, rebuild it
+    if len(common.finger_tables) == 0:
+        print(red("Finger table lost, rebuilding..."))
+        for node in common.mids:
+            common.finger_tables[node['uid']] = generate_finger_table_for_node(node, N, m)
+            send_finger_table_update(node, common.finger_tables[node['uid']])
+        common.server_updating_finger_table = False
+        return
 
     # Insert the new node in the sorted list of nodes
     common.mids.append(new_node)
