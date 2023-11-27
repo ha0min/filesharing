@@ -350,6 +350,36 @@ def node_legacy_transfer():
     return "store legacy success", 200
 
 
+@app.route(endpoints.node_update_k, methods=['POST'])
+def node_update_k():
+    """
+    this could only be called by the server to update the k value of node
+    :return:
+    """
+
+    # check if the form has k
+    if 'k' not in request.form:
+        return 'Please provide a k and node_info', 400
+
+    # check if the request is sent by the server
+    if request.remote_addr != config.BOOTSTRAP_IP:
+        return 'You are not the server', 403
+
+    k = request.form.get('k', '')
+    common.k = int(k)
+
+    print(red(f"got instruction from server to update k to {k}"))
+
+    if k == 0:
+        print(red(f"the k is set to zero, i am not going to replicate any file from this on"))
+        pass
+
+    # todo start replication
+
+    return "update k success", 200
+
+
+
 # ------------------ user endpoints ------------------
 
 @app.route(endpoints.user_query_file, methods=['GET'])
@@ -447,7 +477,7 @@ def upload_file():
         time.sleep(0.3)
 
     common.already_upload_to_chord = False
-    
+
 
     return jsonify(message='File successfully uploaded'), 200
 

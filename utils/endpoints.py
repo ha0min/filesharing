@@ -64,6 +64,9 @@ node_query_result = '/node/query_result'
 global node_legacy_transfer # POST: a node leaves, it transfers its files to its successor {filename name, file content}
 node_legacy_transfer = '/node/legacy_transfer'
 
+global node_update_k
+node_update_k = '/node/update_k'
+
 # ----------------------------------------------
 # user endpoints
 

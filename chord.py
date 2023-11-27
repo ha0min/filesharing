@@ -562,3 +562,27 @@ def send_query_result(request_node, res, filename):
         print(red("i have sent the query result to the request node"))
     else:
         print(red("something wrong when sending query result"), response.text, response.status_code)
+
+
+def files_need_to_be_replicated(origin_node, k, filename):
+    """
+    Replicate files to the new node based on the hash keys.
+    :param origin_node: {uid, ip, port} of the origin node
+    :param k: number of nodes to replicate
+    :param filename: filename to replicate, should be hashed
+    """
+    if config.NDEBUG:
+        print(yellow(f"[files_need_to_be_replicated] {origin_node} replicate file {filename} to {k} nodes"))
+
+    # Files to replicate to the new node
+    files_to_replicate = []
+
+    # Identify files that should be replicated to the new node
+    for i in range(k):
+        hashed_name_int = int(filename, 16)
+        node_id = (hashed_name_int + 2 ** i) % 2 ** 160
+
+        if is_responsible_for_key(node_id, int(origin_node['uid'], 16), int(common.my_uid, 16)):
+            files_to_replicate.append(filename)
+
+    return files_to_replicate

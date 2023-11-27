@@ -27,7 +27,7 @@ def get_info_from_identifier(file):
     :return:  A dictionary with the node_id, ip and port
     """
     return {
-        'node_id': file.key.split('_')[0],
-        'ip': file.key.split('_')[1],
-        'port': file.key.split('_')[2]
+        'uid': file.split('_')[0],
+        'ip': file.split('_')[1],
+        'port': file.split('_')[2]
     }

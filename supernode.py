@@ -27,8 +27,8 @@ import time
 from utils.colorfy import *
 from utils.util import get_info_from_identifier
 
-BUCKET_NAME = "file-share-1"
-SERVER_BUCKET_NAME = "server-info"
+BUCKET_NAME = "file-share-coen317"
+SERVER_BUCKET_NAME = "server-info-coen317"
 LEADER_FILE = "leader_config.json"
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5551
@@ -74,7 +74,7 @@ def is_leader_alive(leader):
         return True
 
     # Use a temporary socket to check if the leader is alive
-    if leader['uid'] == common.my_ip:
+    if leader['uid'] == common.my_uid:
         return True
     print(red("[Server]"), ("Checking if leader is alive..." + leader['ip'] + ":" + str(leader['port'])))
     response = requests.post(config.ADDR + leader['ip'] + ":" + str(leader['port']) + endpoints.ping)
@@ -110,7 +110,7 @@ def read_leader_config():
         response = s3.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
         content = response["Body"].read().decode("utf-8")
 
-        print(red("[read_leader_config] response", response))
+        print(red(f"[read_leader_config] content {content}"))
         if not content:
             # Handle empty file content
             return None
@@ -164,7 +164,7 @@ def write_leader_config(data):
         print(red("running locally, not writing leader config"))
         return
 
-    print(red("[write_leader_config] data", data))
+    print(red(f"[write_leader_config] data {data}"))
 
     s3 = boto3.client("s3")
     s3.put_object(Body=json.dumps(data).encode('utf-8'), Bucket=BUCKET_NAME, Key=LEADER_FILE)
