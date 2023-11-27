@@ -51,3 +51,6 @@ file_from_upload_node = '/node/file_from_upload'
 
 global find_file_host_node # POST: find the host node of the file {file name}
 find_file_host_node = '/node/find_file_host_node'
+
+global file_from_redistribute # POST: adds a new file to the node {file name, file content}
+file_from_redistribute = '/node/file_from_redistribute'

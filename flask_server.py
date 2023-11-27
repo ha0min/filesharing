@@ -150,7 +150,7 @@ def update_finger_table():
 
 @app.route(endpoints.user_add_new_file, methods=['POST'])
 def upload_file():
-    if 'file' not in request.files or 'name' not in request.form:
+    if 'file' not in request.files or 'course_name' not in request.form:
         return 'Please provide a file and a course_name', 400
 
     file = request.files['file']
@@ -177,7 +177,7 @@ def upload_file():
             f"[node_add_new_file] Upload File is saved in my upload folder: {filename}, hashed {hashed_filename}"))
         print(yellow("[node_add_new_file] starting storing file in chord..."))
 
-    t = threading.Thread(target=upload_file_thread, args=hashed_filename)
+    t = threading.Thread(target=upload_file_thread, args=(hashed_filename,))
     t.start()
 
     while not common.already_upload_to_chord:
@@ -193,7 +193,7 @@ def upload_file():
 
 
 def upload_file_thread(filename):
-    return insert_file_to_chord({"who_uploads": {"uid": common.my_id, "ip": common.my_ip, "port": common.my_port},
+    return insert_file_to_chord({"who_uploads": {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port},
                                  "filename": filename})
 
 
@@ -203,9 +203,11 @@ def request_upload_file():
     Request a file upload to the node.
     """
     if 'filename' not in request.form:
+        print(red(f"[endpoints.request_upload_file_to_host] the params are: {str(request.form)}, return 400"))
         return 'Please provide a filename', 400
 
     if 'request_node' not in request.form:
+        print(red(f"[endpoints.request_upload_file_to_host] the params are: {str(request.form)}, return 400"))
         return 'Please provide a request node', 400
     # filename should be hashed already
     filename = request.form.get('filename', '')
@@ -216,14 +218,14 @@ def request_upload_file():
     if not os.path.exists(filepath):
         return 'File not found', 404
 
-    request_node = request.form.get('request_node', '')
+    request_node = json.loads(request.form.get('request_node', ''))
     print(red(f"The node {request_node['uid']} in chord host the file {filename} in my upload folder"))
 
     if config.NDEBUG:
         print(yellow(f"[request_upload_file] Requested file: {filename} from {str(request_node)}"))
 
     # send file to the node
-    response = send_upload_file_to_node(filepath, request_node, filename)
+    response = send_upload_file_to_node(request_node, filepath, filename)
 
     if config.NDEBUG:
         print(yellow(f"[request_upload_file] Response from node: {str(response)}"))
@@ -274,7 +276,7 @@ def find_file_host_node():
     filename = request.form.get('filename', '')
     filename = secure_filename(filename)
 
-    who_uploads = request.form.get('who_uploads', '')
+    who_uploads = json.loads(request.form.get('who_uploads', ''))
 
     if config.NDEBUG:
         print(yellow(f"[find_file_host_node] Requested file: {filename}"))
@@ -284,6 +286,31 @@ def find_file_host_node():
     t.start()
 
     return "I am finding the responsible node", 200
+
+
+@app.route(endpoints.file_from_redistribute, methods=['POST'])
+def file_from_redistribute():
+    """
+    as a new node joined the chord, a file send from my neighbor node claiming i am responsible for it.
+    """
+    if 'file' not in request.files or 'filename' not in request.form:
+        return 'Please provide a file and a filename', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+    print(red("i am responsible for a file from my neighbor node", filename))
+
+    # save the file in my host folder
+    filepath = common.node_host_file_dir + filename + '.pdf'
+    file = request.files['file']
+    file.save(filepath)
+
+    # update host file list
+    common.host_file_list.append(filename)
+
+    return 'i have host the file', 200
+
+
 
 
 # @app.route('/download/<filename>', methods=['GET'])
@@ -315,6 +342,7 @@ def server_start():
     common.node_host_file_dir = common.node_file_dir + "host_files/"
     common.node_replicate_file_dir = common.node_file_dir + "replicate_files/"
     common.node_upload_file_dir = common.node_file_dir + "upload_files/"
+
     if len(sys.argv) == 4 and sys.argv[3] in ("-b", "-B"):
         print("I am the Bootstrap Node with ip: " + yellow(
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
@@ -329,10 +357,36 @@ def server_start():
             common.my_port))
         print("and my unique id is: " + green(common.my_uid))
         print("and my file directory is: " + green(common.node_file_dir))
-        x = threading.Thread(target=node_initial_join, args=[])
+        # create the directory for the node
+        create_node_dir()
+        print(red("I have created the file directory for me, now i will join the chord"))
+        x = threading.Thread(target=node_initial_join, args=())
         x.start()
 
     app.run(host=common.my_ip, port=int(common.my_port), debug=True, use_reloader=False)
+
+
+def create_node_dir():
+    """
+    Create the directory for the node
+    :return:
+    """
+    if not os.path.exists(common.node_file_dir):
+        os.makedirs(common.node_file_dir)
+        if config.NDEBUG:
+            print(yellow(f"[create_node_dir] Directory {common.node_file_dir} created"))
+    if not os.path.exists(common.node_host_file_dir):
+        os.makedirs(common.node_host_file_dir)
+        if config.NDEBUG:
+            print(yellow(f"[create_node_dir] Directory {common.node_host_file_dir} created"))
+    if not os.path.exists(common.node_replicate_file_dir):
+        os.makedirs(common.node_replicate_file_dir)
+        if config.NDEBUG:
+            print(yellow(f"[create_node_dir] Directory {common.node_replicate_file_dir} created"))
+    if not os.path.exists(common.node_upload_file_dir):
+        os.makedirs(common.node_upload_file_dir)
+        if config.NDEBUG:
+            print(yellow(f"[create_node_dir] Directory {common.node_upload_file_dir} created"))
 
 
 def wrong_input_format():

@@ -124,7 +124,6 @@ def node_update_neighbours_func(data):
         print(common.nids[1])
     print(red("i got New neighbours and set"))
 
-    print(red("i need to redistribute my data to my new neighbours"))
     node_redistribute_host_file_to_new_neighbour(change_neighbor)
     return "new neighbours set"
 
@@ -167,14 +166,14 @@ def insert_file_to_chord(data):
     hashedname = data["filename"]
     who_uploads = data["who_uploads"]
 
-    closest_node = determine_correct_node(hashedname, common.my_finger_table, common.my_uid)
+    closest_node = determine_correct_node(hashedname, common.my_finger_table, int(common.my_uid, 16))
     if closest_node['uid'] == common.my_uid:
         print("i am responsible for this file")
         # request the file from the node uploads the file
         response = requests.post(
             config.ADDR + who_uploads["ip"] + ":" + who_uploads["port"] + endpoints.request_upload_file_to_host,
-            json={"filename": hashedname, "request_node": {"uid": common.my_uid, "ip": common.my_ip,
-                                                           "port": common.my_port}})
+            data={"filename": hashedname, "request_node": json.dumps({"uid": common.my_uid, "ip": common.my_ip,
+                                                                      "port": common.my_port})})
         if response.status_code == 200 and response.text == "File sent to the node":
             print(red(f"i have send request to {who_uploads['ip']}:{who_uploads['port']} to host the file"))
     else:
@@ -195,7 +194,7 @@ def forward_file_host_query_to_node(filename, who_uploads, closest_node):
 
     response = requests.post(
         config.ADDR + closest_node["ip"] + ":" + closest_node["port"] + endpoints.find_file_host_node,
-        json={"filename": filename, "who_uploads": who_uploads})
+        data={"filename": filename, "who_uploads": json.dumps(who_uploads)})
     if response.status_code == 200 and response.text == "I am finding the responsible node":
         print(red(f"i have send request to {closest_node['ip']}:{closest_node['port']} to find the "
                   f"node that will host the file"))
@@ -210,13 +209,13 @@ def determine_correct_node(hashed_key, finger_table, self_ID):
     :return: node: {uid, ip, port}
     """
     hashed_key_int = int(hashed_key, 16)
-    closest_preceding_finger = {'uid': self_ID, 'ip': common.my_ip, 'port': common.my_port}
+    closest_preceding_finger = {'uid': common.my_uid, 'ip': common.my_ip, 'port': common.my_port}
 
     # Check if the hashed key falls within the current node's responsibility
     next_node_ID = int(common.nids[1]['uid'], 16)
     if is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
         if config.NDEBUG:
-            print(("[determine_correct_node] current node is responsible: " + blue(str(self_ID))))
+            print(yellow("[determine_correct_node] i am responsible for the file: " + hashed_key))
         return closest_preceding_finger
 
     # Iterate through the finger table to find the responsible node
@@ -229,8 +228,8 @@ def determine_correct_node(hashed_key, finger_table, self_ID):
 
     # Fall back to the next neighbor if no suitable node is found in the finger table
     if config.NDEBUG:
-        print(("[determine_correct_node] no responsible node found in finger table, returning next neighbor: " +
-               blue(str(next_node_ID))))
+        print(yellow("[determine_correct_node] responsible node exceed, send to finger table end: " +
+               str(finger_table[-1]['node'])))
     return finger_table[-1]['node']
 
 
@@ -238,6 +237,8 @@ def is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
     """
     Check if the current node is responsible for the given key in a circular ID space.
     """
+    if config.vNDEBUG:
+        print(blue("[is_responsible_for_key] para: " + self_ID + " " + next_node_ID + " " + hashed_key_int))
     if self_ID < next_node_ID:
         return self_ID < hashed_key_int <= next_node_ID
     return self_ID < hashed_key_int or hashed_key_int <= next_node_ID
@@ -254,27 +255,28 @@ def is_in_range(key, self_ID, node_id):
 
 def send_upload_file_to_node(request_node, filepath, filename):
     while common.is_sending_file:
-        print(red(["[send_upload_file_to_node] waiting for previous to be done..."]))
+        print(red(["[send_upload_file_to_node] waiting for previous send_upload_file_to_done..."]))
         time.sleep(1)
 
     common.is_sending_file = True
     if config.NDEBUG:
-        print(f"[send_upload_file_to_node] sending file {filepath} to node: " + blue(str(request_node)))
+        print(yellow(f"[send_upload_file_to_node] sending file {filename} to node: " + (str(request_node))))
     # get the node ip and port
     node_ip = request_node['ip']
     node_port = request_node['port']
 
     # send file to the node
-    files = {'file': open(filepath, 'rb')}
-    response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.file_from_upload_node, files=files,
+    with open(filepath, 'rb') as f:
+        files = {'file': f}
+        response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.file_from_upload_node, files=files,
                              data={"filename": filename})
 
-    if response.status_code == 200 and response.text == "File saved":
-        print(red("File sent to the node"))
-        res = 'File sent to the node'
-    else:
-        print(red("File sending failed"))
-        res = 'File sending failed'
+        if response.status_code == 200 and response.text == "File saved":
+            print(red("File sent to the node"))
+            res = 'File sent to the node'
+        else:
+            print(red("File sending failed"))
+            res = 'File sending failed'
     common.is_sending_file = False
 
     return res
@@ -287,9 +289,9 @@ def node_redistribute_host_file_to_new_neighbour(change_position):
     :return:
     """
     if change_position == "prev":
-        print(red("[node_redistribute_host_file_to_new_neighbour] prev node changed, i dont have to redistribute"))
+        print(red("prev node changed, i dont have to redistribute"))
         return
-
+    print(red("i need to redistribute my data to my new neighbours", common.nids[1]['ip'], common.nids[1]['port']))
     # Files to transfer to the new node
     files_to_transfer = files_need_to_be_redistributed(common.nids[1])
 
@@ -306,13 +308,14 @@ def node_redistribute_host_file_to_new_neighbour(change_position):
             print(red(f"[node_redistribute_host_file_to_new_neighbour] file {filename} not transferred"))
 
     print(red("[node_redistribute_host_file_to_new_neighbour] files redistributed"))
+    print(yellow(f"[node_redistribute_host_file_to_new_neighbour] files_did_transfer are: {files_did_transfer}"))
 
     # Remove files that were transferred successfully
     for filename in files_did_transfer:
         common.host_file_list.remove(filename)
         os.remove(config.HOST_FILE_DIR + filename + ".pdf")
 
-
+    print(red("[node_redistribute_host_file_to_new_neighbour] files removed from host_file_list and host_file_dir"))
 
 
 
@@ -330,7 +333,7 @@ def files_need_to_be_redistributed(new_node):
     for filename in common.host_file_list:
         hashed_name_int = int(filename, 16)
 
-        if is_responsible_for_key(hashed_name_int, common.my_uid, new_node_id):
+        if is_responsible_for_key(hashed_name_int, int(common.my_uid, 16), new_node_id):
             files_to_transfer.append(filename)
 
     return files_to_transfer

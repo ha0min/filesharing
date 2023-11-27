@@ -59,7 +59,7 @@ host_file_list = []
 global node_file_dir
 global node_upload_file_dir
 global node_host_file_dir
-global node_replica_file_dir
+global node_replicate_file_dir
 
 
 # --------------------------------------------------------
