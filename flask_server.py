@@ -16,6 +16,7 @@ import socket
 import threading
 import time
 
+import requests
 from flask import Flask, json, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
@@ -599,16 +600,16 @@ def get_my_ip():
     if config.LOCAL_SERVER:
         return '127.0.0.1'
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.settimeout(0)
-    try:
-        s.connect(('10.255.255.255', 1))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = '127.0.0.1'
-    finally:
-        s.close()
-    return ip
+    response = requests.get('https://api.ipify.org?format=json')
+
+    if response.status_code != 200:
+        print(red(f"[get_my_ip] response.status_code = {response.status_code}"))
+        return '127.0.0.1'
+
+    if config.NDEBUG:
+        print(yellow(f"[get_my_ip] response.json()['ip'] = {response.json()['ip']}"))
+
+    return response.json()['ip']
 
 
 def is_valid_course_id(course_id):
