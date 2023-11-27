@@ -40,11 +40,14 @@ global my_finger_table
 my_finger_table = []	# list of dicts, each dict is a finger table
 
 global my_finger_table_timestamp
+my_finger_table_timestamp = 0
 
 
 # Supernode variables
 global finger_tables
-finger_tables = []	# list of dicts, each dict is a finger table
+finger_tables = {}	# dict of dicts, key is node uid, each dict is a finger table
+
+global current_leader
 
 # --------------------------------------------------------
 # The File global variable

@@ -62,12 +62,22 @@ s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
 s3_server = boto3.resource('s3')
 
 
-def is_leader_alive(leader_ip):
-    # Use a temporary socket to check if the leader is alive
-    if leader_ip == common.my_ip:
+def is_leader_alive(leader):
+    """
+    Check if the leader is alive
+    :param leader: {uid, ip, port}
+    :return:
+    """
+
+    if config.LOCAL_SERVER:
+        print(red("running locally, leader is alive"))
         return True
-    print(red("[Server]"), ("Checking if leader is alive..." + yellow(leader_ip + ":" + str(LEADER_PORT))))
-    response = requests.post(config.ADDR + leader_ip + ":" + str(LEADER_PORT) + endpoints.ping)
+
+    # Use a temporary socket to check if the leader is alive
+    if leader['uid'] == common.my_ip:
+        return True
+    print(red("[Server]"), ("Checking if leader is alive..." + leader['ip'] + ":" + str(leader['port'])))
+    response = requests.post(config.ADDR + leader['ip'] + ":" + str(leader['port']) + endpoints.ping)
     if response.status_code == 200 and response.text == "pong":
         return True
     else:
@@ -76,6 +86,10 @@ def is_leader_alive(leader_ip):
 
 def create_alive_file():
     file_key = utils.util.get_identifier(common.my_uid, common.my_ip, common.my_port)
+
+    if config.LOCAL_SERVER:
+        print(red("running locally, not creating alive file"))
+        return
 
     # Check if the file already exists in the S3 bucket
     if not does_s3_object_exist(SERVER_BUCKET_NAME, file_key):
@@ -113,6 +127,10 @@ def read_leader_config():
 
 
 def get_node_list_from_s3():
+    if config.LOCAL_SERVER:
+        print(red("running locally, not getting node list from s3"))
+        return common.mids
+
     s3 = boto3.client('s3')
     try:
         response = s3.get_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE)
@@ -123,19 +141,33 @@ def get_node_list_from_s3():
 
 
 def update_local_node_list():
+    if config.LOCAL_SERVER:
+        print(red("running locally, not updating local node list"))
+        return
+
     nodes = get_node_list_from_s3()
     common.mids = nodes
 
 
 def save_node_list_to_s3(node_list):
+    if config.LOCAL_SERVER:
+        print(red("running locally, not saving node list to s3"))
+        return
+
     s3 = boto3.client('s3')
     s3.put_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE, Body=json.dumps(node_list).encode('utf-8'))
     update_local_node_list()
 
 
 def write_leader_config(data):
+    if config.LOCAL_SERVER:
+        print(red("running locally, not writing leader config"))
+        return
+
+    print(red("[write_leader_config] data", data))
+
     s3 = boto3.client("s3")
-    s3.put_object(Body=data.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
+    s3.put_object(Body=json.dumps(data).encode('utf-8'), Bucket=BUCKET_NAME, Key=LEADER_FILE)
 
 
 def get_object_from_s3(s3_client, bucket_name, key):
@@ -159,6 +191,10 @@ def remove_alive_file():
     """
     This function removes the 'alive' file of the current node from the S3 bucket.
     """
+    if config.LOCAL_SERVER:
+        print(red("running locally, not removing alive file"))
+        return
+
     file_key = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
     s3_client = boto3.client('s3')
 
@@ -204,15 +240,19 @@ def get_all_available_servers():
 
 
 def remove_server_from_leader_config():
+    if config.LOCAL_SERVER:
+        print(red("running locally, not removing server from leader config"))
+        return
+
     try:
-        current_leader = read_leader_config()
-        print(red("Current Leader"), str(current_leader))
-        if current_leader is not None:
+        common.current_leader = read_leader_config()
+        print(red("Current Leader"), str(common.current_leader))
+        if common.current_leader is not None:
             print(red("[Update Leader Config]"), ("Try to remove myself as current leader from leader_config.txt..."))
             current_node_identifier = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
 
             # Check if the current leader is the same as the current node
-            if current_leader == current_node_identifier:
+            if common.current_leader == current_node_identifier:
                 # Remove the current_leader from the file content
                 new_content = ''
                 # Update the leader_config.txt file in S3 with the modified content
@@ -232,27 +272,31 @@ def initiate_leader_election():
     This function initiates the leader election process.
     :return:
     """
+    if config.LOCAL_SERVER:
+        print(red("running locally, initiating leader election, i am the leader"))
+        common.current_leader = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
+        return
 
     while True:
         create_alive_file()
-        global current_leader
-        current_leader = read_leader_config()
+        common.current_leader = read_leader_config()
         if config.BDEBUG:
-            print(red("[Leader Election]"), "Current Leader", current_leader)
-        if current_leader.strip():  # Check if current_leader is not blank or only whitespace
-            leader_alive = is_leader_alive(current_leader)
+            print(red("[Leader Election]"), "Current Leader", common.current_leader)
+        # Check if current_leader is a valid object {uid, ip, port}
+        if common.current_leader is not None:
+            leader_alive = is_leader_alive(common.current_leader)
 
             if leader_alive:
-                print(red("[Leader Election]"), f"Leader {current_leader} is alive.")
+                print(red("[Leader Election]"), f"Leader {common.current_leader} is alive.")
             else:
-                print(red("[Leader Election]"), f"Leader {current_leader} is not alive. Re-electing a new leader.")
-                current_leader = None
+                print(red("[Leader Election]"), f"Leader {common.current_leader} is not alive. Re-electing a new leader.")
+                common.current_leader = None
         else:
             print(red("[Leader Election]"), "No current leader information available. No action needed.")
-            current_leader = None
+            common.current_leader = None
 
         # Check if the S3 object (file) exists
-        if current_leader is None:
+        if common.current_leader is None:
             # If no leader or the current leader is not alive, elect a new leader
             available_nodes = get_all_available_servers()
             # choose the node with the lowest node_id as the new leader
@@ -261,8 +305,8 @@ def initiate_leader_election():
                 new_leader = get_info_from_identifier(new_leader_key)
                 if new_leader is not None:
                     print(red("[Leader Election]"), f"Node {new_leader['ip']} elected as the new leader.")
-                    current_leader = new_leader
-                    write_leader_config(current_leader)
+                    common.current_leader = new_leader
+                    write_leader_config(common.current_leader)
 
         time.sleep(LEADER_CHECK_INTERVAL)
 
@@ -270,6 +314,7 @@ def initiate_leader_election():
 def init_server():
     print(red("[Init Server]"), f"Server is listening on {common.my_ip}:{common.my_port}")
 
+    # Start the leader election thread
     leader_election_thread = threading.Thread(target=initiate_leader_election, daemon=True)
     leader_election_thread.start()
 

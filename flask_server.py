@@ -24,7 +24,7 @@ from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
-    node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node
+    node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join
 
 app = Flask(__name__)
 
@@ -142,13 +142,13 @@ def update_finger_table():
         return "Invalid request format: 'timestamp' or'finger_table' key missing", 400
 
     if config.NDEBUG:
-        print(red("Updating finger table..."))
+        print(yellow("Updating finger table..."))
         print(str(res))
 
     return node_update_finger_table_func(res)
 
 
-@app.route(endpoints.node_add_new_file, methods=['POST'])
+@app.route(endpoints.user_add_new_file, methods=['POST'])
 def upload_file():
     if 'file' not in request.files or 'name' not in request.form:
         return 'Please provide a file and a course_name', 400
@@ -303,7 +303,7 @@ def server_start():
     :return:
     """
     common.server_starting = True
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3: # should be -p port
         wrong_input_format()
     if sys.argv[1] in ("-p", "-P"):
         common.my_port = sys.argv[2]
@@ -329,8 +329,8 @@ def server_start():
             common.my_port))
         print("and my unique id is: " + green(common.my_uid))
         print("and my file directory is: " + green(common.node_file_dir))
-        # x = threading.Thread(target=node_initial_join, args=[])
-        # x.start()
+        x = threading.Thread(target=node_initial_join, args=[])
+        x.start()
 
     app.run(host=common.my_ip, port=int(common.my_port), debug=True, use_reloader=False)
 
@@ -349,6 +349,9 @@ def allowed_file(filename):
 
 
 def get_my_ip():
+    if config.LOCAL_SERVER:
+        return '127.0.0.1'
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(0)
     try:

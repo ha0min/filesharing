@@ -122,9 +122,9 @@ def node_update_neighbours_func(data):
         print(common.nids[0])
         print(yellow("NEW Next Node:"))
         print(common.nids[1])
-    print(yellow("i got New neighbours and set"))
+    print(red("i got New neighbours and set"))
 
-    print(yellow("i need to redistribute my data to my new neighbours"))
+    print(red("i need to redistribute my data to my new neighbours"))
     node_redistribute_host_file_to_new_neighbour(change_neighbor)
     return "new neighbours set"
 
@@ -145,7 +145,7 @@ def node_update_finger_table_func(res):
 
         common.my_finger_table_timestamp = res["timestamp"]
         common.my_finger_table = res["finger_table"]
-        return "Finger table updated", 200
+        return "finger table updated", 200
 
     finally:
         common.node_updating_finger_table = False
