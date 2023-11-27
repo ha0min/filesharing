@@ -14,38 +14,40 @@
 # --------------------------------------------------------
 # The system global variable
 
-global k # number of replicas
+global k  # number of replicas
 k = 1
-
-
 
 # --------------------------------------------------------
 # The node's global variable
-global is_bootstrap		# true if node is bootstrap
-global is_leader # true if the bootstrap node is leader
-global my_uid   # my unique identifier, hash of my_ip:my_port
+global is_bootstrap  # true if node is bootstrap
+global is_leader  # true if the bootstrap node is leader
+global my_uid  # my unique identifier, hash of my_ip:my_port
 global my_port
 global my_ip
 
-global still_on_chord	# flag that becomes (and stays) false when a node departs (used to prevent unwanted operations from a departed node)
+# flag that becomes (and stays) false when a node departs (used to prevent unwanted operations from a departed node)
+global still_on_chord
 still_on_chord = True
+
+# dict of file query result, key is file name, value is node info{uid, ip, port}, if not found, value is '404 not found'
+global query_file_result
+query_file_result = {}
 
 # --------------------------------------------------------
 # The DHT global variable
-mids = []		# list of dicts, descending uids
+mids = []  # list of dicts, descending uids
 global nids
-nids = []		# list of dicts, first element is the previous node and second element is the next node
+nids = []  # list of dicts, first element is the previous node and second element is the next node
 
 global my_finger_table
-my_finger_table = []	# list of dicts, each dict is a finger table
+my_finger_table = []  # list of dicts, each dict is a finger table
 
 global my_finger_table_timestamp
 my_finger_table_timestamp = 0
 
-
 # Supernode variables
 global finger_tables
-finger_tables = {}	# dict of dicts, key is node uid, each dict is a finger table
+finger_tables = {}  # dict of dicts, key is node uid, each dict is a finger table
 
 global current_leader
 
@@ -60,7 +62,6 @@ global node_file_dir
 global node_upload_file_dir
 global node_host_file_dir
 global node_replicate_file_dir
-
 
 # --------------------------------------------------------
 # variables for async function
@@ -88,5 +89,5 @@ is_data_replicating = False
 global is_sending_file
 is_sending_file = False
 
-global already_upload_to_chord # true if one node request my uploaded file to host
+global already_upload_to_chord  # true if one node request my uploaded file to host
 already_upload_to_chord = False

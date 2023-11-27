@@ -289,7 +289,8 @@ def initiate_leader_election():
             if leader_alive:
                 print(red("[Leader Election]"), f"Leader {common.current_leader} is alive.")
             else:
-                print(red("[Leader Election]"), f"Leader {common.current_leader} is not alive. Re-electing a new leader.")
+                print(red("[Leader Election]"),
+                      f"Leader {common.current_leader} is not alive. Re-electing a new leader.")
                 common.current_leader = None
         else:
             print(red("[Leader Election]"), "No current leader information available. No action needed.")
@@ -369,13 +370,8 @@ def bootstrap_join_func(new_node):
         common.server_node_joining = False
         return response
 
-    for idx, ids in enumerate(common.mids):
-        if candidate_id < ids["uid"]:
-            common.mids.insert(idx, new_node)
-            break
-        elif idx == len(common.mids) - 1:
-            common.mids.append(new_node)
-            break
+    common.mids.append(new_node)
+    common.mids.sort(key=lambda x: int(x['uid'], 16))
     new_node_idx = common.mids.index(new_node)
     save_node_list_to_s3(common.mids)
 
@@ -447,10 +443,10 @@ def update_finger_tables_on_join(new_node):
     common.server_updating_finger_table = True
     update_local_node_list()
 
-
     new_node_id = int(new_node['uid'], 16)
     N = len(common.mids)
-    m = int(math.ceil(math.log2(N + 1)))  # Recalculate m as the number of nodes has changed
+    # m = int(math.ceil(math.log2(N + 1)))  # Recalculate m as the number of nodes has changed
+    m = 160
 
     # special case: if the finger table is lost, rebuild it
     if len(common.finger_tables) == 0:
@@ -461,9 +457,7 @@ def update_finger_tables_on_join(new_node):
         common.server_updating_finger_table = False
         return
 
-    # Insert the new node in the sorted list of nodes
-    common.mids.append(new_node)
-    common.mids.sort(key=lambda x: int(x['uid'], 16))
+    nodes_to_update = set()
 
     # Update finger tables of affected nodes
     for node in common.mids:
@@ -471,6 +465,8 @@ def update_finger_tables_on_join(new_node):
             continue
 
         node_id = int(node['uid'], 16)
+        update_needed = False
+
         for k in range(1, m + 1):
             start = (node_id + 2 ** (k - 1)) % 2 ** m
             if new_node_id >= start or new_node_id < node_id:
@@ -481,9 +477,17 @@ def update_finger_tables_on_join(new_node):
                 else:
                     # Add a new entry
                     finger_table.append({"start": start, "node": new_node})
+                update_needed = True
 
+            if update_needed:
                 common.finger_tables[node['uid']] = finger_table
-                send_finger_table_update(node, finger_table)
+                nodes_to_update.add(node['uid'])
+                update_needed = False
+
+    for node_uid in nodes_to_update:
+        node = next(filter(lambda x: x['uid'] == node_uid, common.mids), None)
+        if node:
+            send_finger_table_update(node, common.finger_tables[node_uid])
 
     # Calculate finger table for the new node
     common.finger_tables[new_node['uid']] = generate_finger_table_for_node(new_node, N, m)
@@ -538,7 +542,7 @@ def send_finger_table_update(node, finger_table):
                                  json={"finger_table": finger_table, "timestamp": time.time()})
         if response.status_code == 200 and response.text == "finger table updated":
             if config.BDEBUG:
-                print(blue(f"Updated finger table of {node['uid']} successfully"))
+                print(blue(f"Updated finger table of {node['ip']}:{node['port']} successfully"))
         else:
             print(RED("Something went wrong while updating finger table"))
     except:

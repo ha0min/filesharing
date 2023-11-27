@@ -25,6 +25,9 @@ b_list = '/boot/list'
 global ping # GET: check if the node alive, returns "pong"
 ping = '/ping'
 
+# ----------------------------------------------
+# node endpoints
+
 global node_join_procedure # POST: adds node to the Chord {node uid, ip, port}
 node_join_procedure = '/node/procedure'
 
@@ -40,9 +43,6 @@ replic_nodes_list = '/node/replic_nodes_list'
 global node_update_finger_table # POST: updates the finger table of the node {node uid, ip, port}
 node_update_finger_table = '/node/update_finger_table'
 
-global user_add_new_file # POST: adds a new file to the node {file name, file content}
-user_add_new_file = '/user/new_file'
-
 global request_upload_file_to_host # POST: request to upload a file to the node {file name, file content}
 request_upload_file_to_host = '/node/request_upload_file'
 
@@ -54,3 +54,21 @@ find_file_host_node = '/node/find_file_host_node'
 
 global file_from_redistribute # POST: adds a new file to the node {file name, file content}
 file_from_redistribute = '/node/file_from_redistribute'
+
+global node_chain_query_file # POST: query a file in the chord {file name, request node info}
+node_chain_query_file = '/node/query_file_in_the_chord'
+
+global node_query_result # POST: the result of querying file in the chord {file name, request node info}
+node_query_result = '/node/query_result'
+
+# ----------------------------------------------
+# user endpoints
+
+global user_add_new_file # POST: adds a new file to the node {file name, file content}
+user_add_new_file = '/user/new_file'
+
+global user_get_file # GET: returns the file content {file name}
+user_get_file = '/user/get_file'
+
+global user_query_file # GET: query a file in the chord {file name}
+user_query_file = '/user/query_file'

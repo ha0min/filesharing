@@ -16,7 +16,7 @@ import socket
 import threading
 import time
 
-from flask import Flask, json, request, jsonify
+from flask import Flask, json, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
 import config
@@ -24,7 +24,8 @@ from supernode import init_server, bootstrap_join_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
-    node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join
+    node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join, \
+    query_file_in_the_chord
 
 app = Flask(__name__)
 
@@ -219,7 +220,8 @@ def request_upload_file():
         return 'File not found', 404
 
     request_node = json.loads(request.form.get('request_node', ''))
-    print(red(f"The node {request_node['uid']} in chord host the file {filename} in my upload folder"))
+    print(red(f"The node {request_node['ip']}:{request_node['port']} in chord host the file {filename} "
+              f"in my upload folder"))
 
     if config.NDEBUG:
         print(yellow(f"[request_upload_file] Requested file: {filename} from {str(request_node)}"))
@@ -257,7 +259,7 @@ def file_from_upload_node():
     file = request.files['file']
     file.save(filepath)
 
-    #update host file list
+    # update host file list
     common.host_file_list.append(filename)
 
     return 'File saved', 200
@@ -298,7 +300,7 @@ def file_from_redistribute():
 
     filename = request.form.get('filename', '')
     filename = secure_filename(filename)
-    print(red("i am responsible for a file from my neighbor node", filename))
+    print(red(f"i am responsible for a file from my neighbor node {filename}"))
 
     # save the file in my host folder
     filepath = common.node_host_file_dir + filename + '.pdf'
@@ -311,6 +313,131 @@ def file_from_redistribute():
     return 'i have host the file', 200
 
 
+@app.route(endpoints.user_query_file, methods=['GET'])
+def query_file():
+    """
+    Query a file from the node.
+    """
+    if 'filename' not in request.args:
+        return 'Please provide a filename', 400
+
+    filename = request.args.get('filename', '')
+    filename = secure_filename(filename)
+    print(red(f"user query file, with name {filename}"))
+
+    hashed_filename = hash(filename)
+
+    # run the query in a new thread
+    t = threading.Thread(target=query_file_in_the_chord_thread, args=(hashed_filename,))
+    t.start()
+
+    # Define a timeout (e.g., 30 seconds)
+    timeout = 5  # seconds
+    start_time = time.time()
+
+    # if a node hosted the file got my request, it will send his info{uid, ip, port} to me, and i will
+    # store it in common.query_file_result
+    while True:
+        if hashed_filename in common.query_file_result and common.query_file_result[hashed_filename] is not None:
+            hosted_node = common.query_file_result[hashed_filename]
+
+            if hosted_node == 'File not found in chord':
+                # delete the query file result
+                del common.query_file_result[hashed_filename]
+                print(red("file not found in chord"))
+                return 'File not found in chord', 404
+
+            print(red(f"the file is hosted by {str(hosted_node)}, i will return the url to the user"))
+
+            # Return the file URL
+            return config.ADDR + hosted_node['ip'] + ':' + str(hosted_node['port']) + \
+                   endpoints.user_get_file + '?filename=' + filename, 200
+
+        # Check if the timeout has been reached
+        if time.time() - start_time > timeout:
+            print(red("Query timed out"))
+            return 'Query timed out', 408  # 408 Request Timeout
+
+        print(red("Asking the chord to give me file, waiting for query result"))
+        time.sleep(1)
+
+
+def query_file_in_the_chord_thread(filename):
+    query_file_in_the_chord({"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}, filename)
+
+
+@app.route(endpoints.node_chain_query_file, methods=['POST'])
+def chain_query_file():
+    # should be a form has filename, and  node info{uid, ip, port}
+    if 'filename' not in request.form or 'request_node' not in request.form:
+        if config.vNDEBUG:
+            print(blue(f"[node_chain_query_file] Requested file: {request.form.to_dict()}"))
+        return 'Please provide a filename or request_node', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    request_node = json.loads(request.form.get('request_node', ''))
+
+    print(red(f"chain query file start, filename is {filename}, request_node is {request_node}"))
+
+    threading.Thread(target=query_file_in_the_chord, args=(request_node, filename,)).start()
+
+    return "success", 200
+
+
+@app.route(endpoints.user_get_file, methods=['GET'])
+def get_file():
+    """
+    Get a file from the node.
+    """
+    if 'filename' not in request.args:
+        return 'Please provide a filename', 400
+
+    print(red(f"user get file {request.args.get('filename', '')}"))
+
+    filename = request.args.get('filename', '')
+    filename = secure_filename(filename)
+
+    # check file exist in my host folder
+    filepath = common.node_host_file_dir + filename + '.pdf'
+
+    # if there is a optional param type
+    if 'type' in request.args:
+        print(red(f"user get file, with the type is {request.args.get('type', '')}"))
+        if request.args.get('type', '') == 'replica':
+            # check file exist in my host folder
+            filepath = common.node_replicate_file_dir + filename + '.pdf'
+
+    if not os.path.exists(filepath):
+        return 'File not found', 404
+
+    return send_file(filepath, as_attachment=True)
+
+
+@app.route(endpoints.node_query_result, methods=['POST'])
+def node_query_result():
+    """
+    the node who hosted the file will send the file url to the node who query the file
+    """
+    if 'filename' not in request.form or 'res' not in request.form:
+        return 'Please provide a filename or res', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    res = request.form.get('res', '')
+    if res != 'File not found in chord':
+        hosted_node = json.loads(res)
+    else:
+        hosted_node = res
+
+    print(red(f"i am going to store the hosted node info {hosted_node}"))
+
+    # store the hosted node info
+    common.query_file_result[filename] = hosted_node
+
+    return "success", 200
 
 
 # @app.route('/download/<filename>', methods=['GET'])
@@ -330,7 +457,7 @@ def server_start():
     :return:
     """
     common.server_starting = True
-    if len(sys.argv) < 3: # should be -p port
+    if len(sys.argv) < 3:  # should be -p port
         wrong_input_format()
     if sys.argv[1] in ("-p", "-P"):
         common.my_port = sys.argv[2]

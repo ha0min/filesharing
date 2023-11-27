@@ -92,6 +92,7 @@ def node_redistribute_data(data):
     print("Chord join update POST function is starting...")
     node_list = data["node_list"]
     new_id = data["new_id"]
+    #todo update here
     try:
         response = requests.post(
             config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + endpoints.node_update_replicate,
@@ -144,6 +145,7 @@ def node_update_finger_table_func(res):
 
         common.my_finger_table_timestamp = res["timestamp"]
         common.my_finger_table = res["finger_table"]
+        print(red("finger table updated"))
         return "finger table updated", 200
 
     finally:
@@ -219,18 +221,18 @@ def determine_correct_node(hashed_key, finger_table, self_ID):
         return closest_preceding_finger
 
     # Iterate through the finger table to find the responsible node
-    for entry in finger_table:
+    for entry in reversed(finger_table):
         node_id = int(entry['node']['uid'], 16)
         if is_in_range(hashed_key_int, self_ID, node_id):
             if config.NDEBUG:
-                print(("[determine_correct_node] responsible node found: " + blue(str(node_id))))
+                print(yellow("[determine_correct_node] responsible node found: " + (str(entry['node']))))
             return entry['node']
 
     # Fall back to the next neighbor if no suitable node is found in the finger table
     if config.NDEBUG:
-        print(yellow("[determine_correct_node] responsible node exceed, send to finger table end: " +
-               str(finger_table[-1]['node'])))
-    return finger_table[-1]['node']
+        print(yellow("[determine_correct_node] responsible node exceed, send to immediate successor: " +
+                     str(common.nids[1])))
+    return common.nids[1]
 
 
 def is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
@@ -269,7 +271,7 @@ def send_upload_file_to_node(request_node, filepath, filename):
     with open(filepath, 'rb') as f:
         files = {'file': f}
         response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.file_from_upload_node, files=files,
-                             data={"filename": filename})
+                                 data={"filename": filename})
 
         if response.status_code == 200 and response.text == "File saved":
             print(red("File sent to the node"))
@@ -291,7 +293,7 @@ def node_redistribute_host_file_to_new_neighbour(change_position):
     if change_position == "prev":
         print(red("prev node changed, i dont have to redistribute"))
         return
-    print(red("i need to redistribute my data to my new neighbours", common.nids[1]['ip'], common.nids[1]['port']))
+    print(red("i need to redistribute my data to my new neighbours"), common.nids[1]['ip'], common.nids[1]['port'])
     # Files to transfer to the new node
     files_to_transfer = files_need_to_be_redistributed(common.nids[1])
 
@@ -316,7 +318,6 @@ def node_redistribute_host_file_to_new_neighbour(change_position):
         os.remove(config.HOST_FILE_DIR + filename + ".pdf")
 
     print(red("[node_redistribute_host_file_to_new_neighbour] files removed from host_file_list and host_file_dir"))
-
 
 
 def files_need_to_be_redistributed(new_node):
@@ -363,3 +364,75 @@ def redistribute_host_file_to_node(request_node, filename):
             print(red("with response"), response.text, response.status_code)
 
     return res
+
+
+def query_file_in_the_chord(request_node, filename):
+    """
+    Query a file in the chord.
+    :param request_node: {uid, ip, port} of the node to query
+    :param filename: filename to query, should be hashed
+    :return: the node that has the file
+    """
+    if config.NDEBUG:
+        print(yellow(f"[query_file_in_the_chord]{request_node} query file {filename} in the chord"))
+    # get the node ip and port
+    node_ip = request_node['ip']
+    node_port = request_node['port']
+
+    print(red(f"i got a request to find a file in the chord, {filename}, {node_ip}, {node_port}"))
+
+    # first check if it is in my host file list
+    if filename in common.host_file_list:
+        print(red("i have the file, now i tell the request node to get it from me"))
+        my_info = {'uid': common.my_uid, 'ip': common.my_ip, 'port': common.my_port}
+        send_query_result(request_node, my_info, filename)
+        return "success"
+
+    # otherwise, check the finger table to determine which node is responsible for the file
+    node = determine_correct_node(hashed_key=filename,
+                                  finger_table=common.my_finger_table, self_ID=int(common.my_uid, 16))
+
+    if node['uid'] == common.my_uid:
+        print(red("i am responsible for the file, but i dont have the file"))
+        send_query_result(request_node, "File not found in chord", filename)
+
+        #todo check if the file is in replica node
+        return "404"
+
+    # forward the request to the correct node
+    response = requests.get(config.ADDR + node['ip'] + ":" + node['port'] + endpoints.node_chain_query_file,
+                            data={"filename": filename, "request_node": json.dumps(request_node)})
+
+    if response.status_code == 200 and response.text == "success":
+        print(red("i am not reponsible for the file, but i send query to the node"),node['ip'], node['port'])
+        return "success"
+    else:
+        print(red("something wrong when querying file"), response.text, response.status_code)
+        return "404"
+
+
+def send_query_result(request_node, res, filename):
+    """
+    Send the query result back to the request node.
+    :param request_node:
+    :param res:
+    :param filename:
+    :return:
+    """
+    print(red(f"i am responsible for file {filename}, send back to the request node with result {res}"))
+
+    # get the node ip and port
+    node_ip = request_node['ip']
+    node_port = request_node['port']
+
+    if res != "File not found in chord":
+        res = json.dumps(res)
+    # send the result to the request node
+    response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.node_query_result,
+                                data={"res": res, "filename": filename})
+
+    if response.status_code == 200 and response.text == "success":
+        print(red("i have sent the query result to the request node"))
+    else:
+        print(red("something wrong when sending query result"), response.text, response.status_code)
+
