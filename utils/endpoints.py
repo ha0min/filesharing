@@ -13,11 +13,11 @@
 global node_info # GET: returns node info
 node_info = '/node/info'
 
-global node_join_bootstrap  # POST: adds node to the Chord {node uid, ip, port}
-node_join_bootstrap = '/boot/join'
+global boot_join  # POST: adds node to the Chord {node uid, ip, port}
+boot_join = '/boot/join'
 
-global b_leave  # POST: removes node from the Chord {node uid}
-b_leave = '/boot/leave'
+global boot_leave  # POST: removes node from the Chord {node uid}
+boot_leave = '/boot/leave'
 
 global b_list  # GET: returns list of nodes in the Chord
 b_list = '/boot/list'
@@ -60,6 +60,9 @@ node_chain_query_file = '/node/query_file_in_the_chord'
 
 global node_query_result # POST: the result of querying file in the chord {file name, request node info}
 node_query_result = '/node/query_result'
+
+global node_legacy_transfer # POST: a node leaves, it transfers its files to its successor {filename name, file content}
+node_legacy_transfer = '/node/legacy_transfer'
 
 # ----------------------------------------------
 # user endpoints

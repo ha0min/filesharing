@@ -375,6 +375,9 @@ def bootstrap_join_func(new_node):
     new_node_idx = common.mids.index(new_node)
     save_node_list_to_s3(common.mids)
 
+    # threading.Thread(target=update_finger_tables_on_join, args=(new_node,), daemon=True).start()
+    update_finger_tables_on_join(new_node)
+
     if config.vBDEBUG:
         print(blue(common.mids))
         print(blue("new node position in common.mids: " + str(new_node_idx)))
@@ -404,7 +407,6 @@ def bootstrap_join_func(new_node):
     if config.NDEBUG:
         print("Master completed join of the node")
 
-    threading.Thread(target=update_finger_tables_on_join, args=(new_node,), daemon=True).start()
     # TODO add join procedure
     # try:
     #     response = requests.post(config.ADDR + new_node["ip"] + ":" + new_node["port"] + endpoints.chord_join_procedure,
@@ -547,3 +549,54 @@ def send_finger_table_update(node, finger_table):
             print(RED("Something went wrong while updating finger table"))
     except:
         print("Something went wrong with finger table update")
+
+
+def boot_leave_func(node_info):
+    if node_info not in common.mids:
+        return "you are not in network", 400
+    
+    node_idx = common.mids.index(node_info)
+    print(red(f"Node {node_info['uid']} with {node_info['ip']}:{node_info['port']} asking to leave the network..."))
+
+    prev_of_prev = common.mids[node_idx - 2] if node_idx >= 2 else (
+        common.mids[-1] if node_idx >= 1 else common.mids[-2])
+    prev = common.mids[node_idx - 1] if node_idx >= 1 else common.mids[-1]
+    next = common.mids[node_idx + 1] if node_idx < len(common.mids) - 1 else common.mids[0]
+    next_of_next = common.mids[node_idx + 2] if node_idx < len(common.mids) - 2 else (
+        common.mids[0] if node_idx < len(common.mids) - 1 else common.mids[1])
+
+    print(red(f"Node {node_info['uid']} leaving, telling its neighbours to update their neighbours..."))
+    response_p = requests.post(config.ADDR + prev["ip"] + ":" + prev["port"] + endpoints.node_update_neighbours,
+                               json={"prev": prev_of_prev, "next": next, "change": "next"})
+    if response_p.status_code == 200 and response_p.text == "new neighbours set":
+        if config.BDEBUG:
+            print(red("Updated previous neighbour successfully"))
+        p_ok = True
+    else:
+        print(red("Something went wrong while updating previous node list"))
+        p_ok = False
+
+    response_n = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
+                               json={"prev": prev, "next": next_of_next, "change": "prev"})
+    if response_n.status_code == 200 and response_n.text == "new neighbours set":
+        if config.BDEBUG:
+            print(blue("Updated next neighbour successfully"))
+        n_ok = True
+    else:
+        print(RED("Something went wrong while updating next node list"))
+        n_ok = False
+
+    if n_ok and p_ok:
+        del common.mids[node_idx]
+        print(red(f"Node {node_info['uid']} with {node_info['ip']}:{node_info['port']} removed successfully"))
+        return "you are ok to die"
+    else:
+        print(red(f"Cannot remove Node {node_info['ip']}:{node_info['port']}, something went wrong! "))
+
+        # response_p = requests.post(config.ADDR + prev["ip"] + ":" + prev["port"] + endpoints.node_update_neighbours,
+        #                            json={"prev": prev_of_prev, "next": next, "change": "next"})
+        #
+        # response_n = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
+        #                            json={"prev": prev, "next": next_of_next, "change": "prev"})
+        #
+        return "no"

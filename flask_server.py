@@ -20,12 +20,12 @@ from flask import Flask, json, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
 import config
-from supernode import init_server, bootstrap_join_func
+from supernode import init_server, bootstrap_join_func, boot_leave_func
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
     node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join, \
-    query_file_in_the_chord
+    query_file_in_the_chord, init_node
 
 app = Flask(__name__)
 
@@ -47,15 +47,33 @@ def ping():
     """
     return "pong"
 
+# ----------------------------------------------
+# supernode endpoints
 
-@app.route(endpoints.node_join_bootstrap, methods=['POST'])  # join(nodeID)
+@app.route(endpoints.boot_join, methods=['POST'])  # join(nodeID)
 def boot_join():
     if common.is_bootstrap:
         new_node = request.form.to_dict()
         return bootstrap_join_func(new_node)
     else:
-        print(red(f"This is not the bootstrap node and not allowed for {endpoints.node_join_bootstrap}."))
+        print(red(f"This is not the bootstrap node and not allowed for {endpoints.boot_join}."))
 
+
+@app.route(endpoints.boot_leave, methods=['POST'])  # leave(nodeID)
+def boot_leave():
+    if common.is_bootstrap:
+        # check if the request sent with a node_info
+        if request.form.get("node_info") is None:
+            print(red(f"Node info is not provided for {endpoints.boot_leave}."))
+            return "provide your info to dead", 400
+
+        node_info = json.loads(request.form.get("node_info"))
+        return boot_leave_func(node_info)
+    else:
+        print(red(f"This is not the bootstrap node and not allowed for {endpoints.boot_leave}."))
+
+# ----------------------------------------------
+# node endpoints
 
 @app.route(endpoints.node_join_procedure, methods=['POST'])
 def join_procedure():
@@ -147,55 +165,6 @@ def update_finger_table():
         print(str(res))
 
     return node_update_finger_table_func(res)
-
-
-@app.route(endpoints.user_add_new_file, methods=['POST'])
-def upload_file():
-    if 'file' not in request.files or 'course_name' not in request.form:
-        return 'Please provide a file and a course_name', 400
-
-    file = request.files['file']
-    filename = request.form.get('course_name', '')
-
-    # Check if the file format is correct (PDF)
-    if not allowed_file(file.filename):
-        return jsonify(message='File type not allowed, only PDFs are accepted'), 400
-
-    filename = secure_filename(filename)
-
-    # Check if the filename matches the required format (4 letters and numbers)
-    if not is_valid_course_id(filename):
-        return jsonify(message='Filename format is incorrect'), 400
-
-    common.is_data_uploading = True
-
-    hashed_filename = hash(filename)
-    filepath = common.node_upload_file_dir + hashed_filename + '.pdf'
-    file.save(filepath)
-
-    if config.NDEBUG:
-        print(yellow(
-            f"[node_add_new_file] Upload File is saved in my upload folder: {filename}, hashed {hashed_filename}"))
-        print(yellow("[node_add_new_file] starting storing file in chord..."))
-
-    t = threading.Thread(target=upload_file_thread, args=(hashed_filename,))
-    t.start()
-
-    while not common.already_upload_to_chord:
-        print(yellow("waiting for a node in the chord to request my uploaded file to host..."))
-        time.sleep(0.3)
-
-    common.already_upload_to_chord = False
-    # Handle file storage in Chord DHT
-    # TODO: implement this
-    # store_file_in_chord(filepath, filename)
-
-    return jsonify(message='File successfully uploaded'), 200
-
-
-def upload_file_thread(filename):
-    return insert_file_to_chord({"who_uploads": {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port},
-                                 "filename": filename})
 
 
 @app.route(endpoints.request_upload_file_to_host, methods=['POST'])
@@ -312,6 +281,76 @@ def file_from_redistribute():
 
     return 'i have host the file', 200
 
+@app.route(endpoints.node_chain_query_file, methods=['POST'])
+def chain_query_file():
+    # should be a form has filename, and  node info{uid, ip, port}
+    if 'filename' not in request.form or 'request_node' not in request.form:
+        if config.vNDEBUG:
+            print(blue(f"[node_chain_query_file] Requested file: {request.form.to_dict()}"))
+        return 'Please provide a filename or request_node', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    request_node = json.loads(request.form.get('request_node', ''))
+
+    print(red(f"chain query file start, filename is {filename}, request_node is {request_node}"))
+
+    threading.Thread(target=query_file_in_the_chord, args=(request_node, filename,)).start()
+
+    return "success", 200
+
+
+@app.route(endpoints.node_query_result, methods=['POST'])
+def node_query_result():
+    """
+    the node who hosted the file will send the file url to the node who query the file
+    """
+    if 'filename' not in request.form or 'res' not in request.form:
+        return 'Please provide a filename or res', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    res = request.form.get('res', '')
+    if res != 'File not found in chord':
+        hosted_node = json.loads(res)
+    else:
+        hosted_node = res
+
+    print(red(f"i am going to store the hosted node info {hosted_node}"))
+
+    # store the hosted node info
+    common.query_file_result[filename] = hosted_node
+
+    return "success", 200
+
+
+@app.route(endpoints.node_legacy_transfer, methods=['POST'])
+def node_legacy_transfer():
+    """
+    the legacy node will send the file to the node who is responsible for it
+    :return:
+    """
+    # check the form has filename, and file
+    if 'filename' not in request.form or 'file' not in request.files or 'node_info' not in request.form:
+        return 'Please provide a filename and file and node_info', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    file = request.files['file']
+    filepath = common.node_host_file_dir + filename + '.pdf'
+    file.save(filepath)
+
+    common.host_file_list.append(filename)
+
+    print(red(f"i am got a file {filename} from legacy node {request.form.get('node_info', '')}"))
+
+    return "store legacy success", 200
+
+
+# ------------------ user endpoints ------------------
 
 @app.route(endpoints.user_query_file, methods=['GET'])
 def query_file():
@@ -371,24 +410,51 @@ def query_file_in_the_chord_thread(filename):
     query_file_in_the_chord({"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}, filename)
 
 
-@app.route(endpoints.node_chain_query_file, methods=['POST'])
-def chain_query_file():
-    # should be a form has filename, and  node info{uid, ip, port}
-    if 'filename' not in request.form or 'request_node' not in request.form:
-        if config.vNDEBUG:
-            print(blue(f"[node_chain_query_file] Requested file: {request.form.to_dict()}"))
-        return 'Please provide a filename or request_node', 400
+@app.route(endpoints.user_add_new_file, methods=['POST'])
+def upload_file():
+    if 'file' not in request.files or 'course_name' not in request.form:
+        return 'Please provide a file and a course_name', 400
 
-    filename = request.form.get('filename', '')
+    file = request.files['file']
+    filename = request.form.get('course_name', '')
+
+    # Check if the file format is correct (PDF)
+    if not allowed_file(file.filename):
+        return jsonify(message='File type not allowed, only PDFs are accepted'), 400
+
     filename = secure_filename(filename)
 
-    request_node = json.loads(request.form.get('request_node', ''))
+    # Check if the filename matches the required format (4 letters and numbers)
+    if not is_valid_course_id(filename):
+        return jsonify(message='Filename format is incorrect'), 400
 
-    print(red(f"chain query file start, filename is {filename}, request_node is {request_node}"))
+    common.is_data_uploading = True
 
-    threading.Thread(target=query_file_in_the_chord, args=(request_node, filename,)).start()
+    hashed_filename = hash(filename)
+    filepath = common.node_upload_file_dir + hashed_filename + '.pdf'
+    file.save(filepath)
 
-    return "success", 200
+    if config.NDEBUG:
+        print(yellow(
+            f"[node_add_new_file] Upload File is saved in my upload folder: {filename}, hashed {hashed_filename}"))
+        print(yellow("[node_add_new_file] starting storing file in chord..."))
+
+    t = threading.Thread(target=upload_file_thread, args=(hashed_filename,))
+    t.start()
+
+    while not common.already_upload_to_chord:
+        print(yellow("waiting for a node in the chord to request my uploaded file to host..."))
+        time.sleep(0.3)
+
+    common.already_upload_to_chord = False
+    
+
+    return jsonify(message='File successfully uploaded'), 200
+
+
+def upload_file_thread(filename):
+    return insert_file_to_chord({"who_uploads": {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port},
+                                 "filename": filename})
 
 
 @app.route(endpoints.user_get_file, methods=['GET'])
@@ -418,42 +484,6 @@ def get_file():
         return 'File not found', 404
 
     return send_file(filepath, as_attachment=True)
-
-
-@app.route(endpoints.node_query_result, methods=['POST'])
-def node_query_result():
-    """
-    the node who hosted the file will send the file url to the node who query the file
-    """
-    if 'filename' not in request.form or 'res' not in request.form:
-        return 'Please provide a filename or res', 400
-
-    filename = request.form.get('filename', '')
-    filename = secure_filename(filename)
-
-    res = request.form.get('res', '')
-    if res != 'File not found in chord':
-        hosted_node = json.loads(res)
-    else:
-        hosted_node = res
-
-    print(red(f"i am going to store the hosted node info {hosted_node}"))
-
-    # store the hosted node info
-    common.query_file_result[filename] = hosted_node
-
-    return "success", 200
-
-
-# @app.route('/download/<filename>', methods=['GET'])
-# def download_file(filename):
-#     # Retrieve file path from Chord DHT
-#     filepath = get_file_from_chord(filename)
-#
-#     if filepath and os.path.exists(filepath):
-#         return send_file(filepath, as_attachment=True)
-#     else:
-#         return 'File not found', 404
 
 
 def server_start():
@@ -494,6 +524,7 @@ def server_start():
         print(red("I have created the file directory for me, now i will join the chord"))
         x = threading.Thread(target=node_initial_join, args=())
         x.start()
+        init_node()
 
     app.run(host=common.my_ip, port=int(common.my_port), debug=True, use_reloader=False)
 

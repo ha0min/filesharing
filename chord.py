@@ -12,6 +12,8 @@
 import hashlib
 import json
 import os
+import signal
+import sys
 import threading
 import time
 from threading import Thread
@@ -24,6 +26,41 @@ from utils.colorfy import *
 
 
 # ----------------------Node Function---------------------------------------
+def init_node():
+    """
+    initialize the node, setting the dead function
+    :return:
+    """
+
+    def signal_handler(sig, frame):
+        print('\n')
+        print(red(f"i am the node {common.my_uid} with {common.my_ip}:{common.my_port}and i am going down..."))
+
+        retry_count = 0
+        max_retries = 3  # Set a max retry limit
+        server_res = False
+
+        while not server_res and retry_count < max_retries:
+            server_res = node_init_leave()
+            if not server_res:
+                print(red(f"Leave attempt {retry_count + 1} failed. Retrying..."))
+                time.sleep(5)  # Wait for second before retrying
+                retry_count += 1
+
+        if not server_res:
+            print(red("Unable to leave gracefully after multiple attempts. Forcing exit."))
+
+        transfer_my_hosted_files()
+
+        print(red(f"Goodbye! I am dead now. {common.my_uid}, {common.my_ip}:{common.my_port}"))
+        common.still_on_chord = False
+
+        # Print a message indicating where the IP addresses are stored
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+
 def node_initial_join():
     if common.still_on_chord:
         if not common.is_bootstrap:
@@ -31,7 +68,7 @@ def node_initial_join():
                 print(yellow("\nattempting to join the Chord..."))
             try:
                 response = requests.post(
-                    config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.node_join_bootstrap,
+                    config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.boot_join,
                     data={"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})
                 if response.status_code == 200:
                     data = response.json()
@@ -47,13 +84,95 @@ def node_initial_join():
                         print(f"Previous Node: {json.dumps(prev_node)}")
                         print(f"Next Node: {json.dumps(next_node)}")
                 else:
-                    print("Something went wrong!!  status code: " + red(response.status.code))
+                    print("Something went wrong!!  status code: " + red(response.status_code))
                     print(red("\nexiting..."))
                     exit(0)
             except:
                 print(red("\nSomething went wrong!! (check if bootstrap is up and running)"))
                 print(red("\nexiting..."))
                 exit(0)
+
+
+def node_init_leave():
+    if config.NDEBUG:
+        print(yellow(f"[node_init_leave] i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
+                     f"and i am going down..."))
+
+    # send depart request to the supernode, begging to leave
+    response = requests.post(config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.boot_leave,
+                             data={"node_info": json.dumps(
+                                 {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})})
+
+    if response.status_code == 200 and response.text == "you are ok to die":
+        print(red(f"server allows to leave..."))
+        return True
+    else:
+        print(red(f"i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
+                  f"and server response {response.text} with {response.status_code}"))
+        return False
+
+
+def transfer_my_hosted_files():
+    """
+    when a node is leaving, it should transfer the files it is responsible for to its successor
+    :return:
+    """
+    print(red(f"i am dead so i am transferring my files to my successor {common.nids[1]}.."))
+
+    if config.NDEBUG:
+        print(yellow(f"[transfer_my_hosted_files] i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
+                     f"and i have files{common.host_file_list}"))
+
+    send_legacy()
+
+    retry_count = 0
+    max_retries = 3  # Set a max retry limit
+
+    # after sending all my legacy, the common_list should be empty
+    while len(common.host_file_list) != 0 and retry_count < max_retries:
+        if config.NDEBUG:
+            print(
+                yellow(f"[transfer_my_hosted_files] i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
+                       f"and i have files{common.host_file_list}"))
+
+        # if not empty, try to send again
+        send_legacy()
+        retry_count += 1
+        time.sleep(5)
+
+    if len(common.host_file_list) != 0:
+        print(red(f"i still have legacy, {common.host_file_list}"))
+
+    return True
+
+
+def send_legacy():
+    for filename in common.host_file_list:
+        if config.NDEBUG:
+            print(yellow(f"[transfer_my_hosted_files] trying {filename}"))
+
+        filepath = common.node_host_file_dir + filename + ".pdf"
+        # check if file exists
+        if not os.path.exists(filepath):
+            if config.NDEBUG:
+                print(yellow(f"file {filename} does not exist in local, continue to next file"))
+            common.host_file_list.remove(filename)
+            continue
+
+        # if exist, start transfer to successor
+        with open(filepath, "rb") as f:
+            files = {"file": f}
+            response = requests.post(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] +
+                                     endpoints.node_legacy_transfer,
+                                     data={"filename": filename,
+                                           "node_info": json.dumps(
+                                               {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})},
+                                     files=files)
+        if response.status_code == 200 and response.text == 'store legacy success':
+            if config.NDEBUG:
+                print(yellow(f"file {filename} transferred to successor"))
+            os.remove(filepath)
+            common.host_file_list.remove(filename)
 
 
 def node_replic_nodes_list(data):
@@ -321,9 +440,11 @@ def node_redistribute_host_file_to_new_neighbour(change_position):
     # Remove files that were transferred successfully
     for filename in files_did_transfer:
         common.host_file_list.remove(filename)
-        os.remove(config.HOST_FILE_DIR + filename + ".pdf")
+        os.remove(common.node_host_file_dir + filename + ".pdf")
+        if config.NDEBUG:
+            print(yellow(f"[node_redistribute_host_file_to_new_neighbour] file {filename} removed"))
 
-    print(red("[node_redistribute_host_file_to_new_neighbour] files removed from host_file_list and host_file_dir"))
+    print(red("done redistributing after new node joined"))
 
 
 def files_need_to_be_redistributed(new_node):
@@ -407,7 +528,7 @@ def query_file_in_the_chord(request_node, filename):
 
     # forward the request to the correct node
     response = requests.post(config.ADDR + node['ip'] + ":" + node['port'] + endpoints.node_chain_query_file,
-                            data={"filename": filename, "request_node": json.dumps(request_node)})
+                             data={"filename": filename, "request_node": json.dumps(request_node)})
 
     if response.status_code == 200 and response.text == "success":
         print(red("i am not reponsible for the file, but i send query to the node"), node['ip'], node['port'])
