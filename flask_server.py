@@ -164,7 +164,7 @@ def upload_file():
     filename = secure_filename(filename)
 
     # Check if the filename matches the required format (4 letters and numbers)
-    if not re.match(r'^[A-Za-z]{4}\d+$', filename):
+    if not is_valid_course_id(filename):
         return jsonify(message='Filename format is incorrect'), 400
 
     common.is_data_uploading = True
@@ -323,6 +323,11 @@ def query_file():
 
     filename = request.args.get('filename', '')
     filename = secure_filename(filename)
+
+    # check if the filename legal
+    if not is_valid_course_id(filename):
+        return 'input should be course id, department code + digits, like CSEN317', 400
+
     print(red(f"user query file, with name {filename}"))
 
     hashed_filename = hash(filename)
@@ -332,7 +337,7 @@ def query_file():
     t.start()
 
     # Define a timeout (e.g., 30 seconds)
-    timeout = 5  # seconds
+    timeout = 15  # seconds
     start_time = time.time()
 
     # if a node hosted the file got my request, it will send his info{uid, ip, port} to me, and i will
@@ -351,7 +356,7 @@ def query_file():
 
             # Return the file URL
             return config.ADDR + hosted_node['ip'] + ':' + str(hosted_node['port']) + \
-                   endpoints.user_get_file + '?filename=' + filename, 200
+                   endpoints.user_get_file + '?filename=' + hashed_filename, 200
 
         # Check if the timeout has been reached
         if time.time() - start_time > timeout:
@@ -543,6 +548,15 @@ def get_my_ip():
     finally:
         s.close()
     return ip
+
+
+def is_valid_course_id(course_id):
+    """
+    Check if the course id is valid
+    :param course_id: 4letters+digits(CSEN317)
+    :return:
+    """
+    return re.match(r'^[A-Za-z]{4}\d+$', course_id)
 
 
 if __name__ == '__main__':

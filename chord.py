@@ -92,7 +92,7 @@ def node_redistribute_data(data):
     print("Chord join update POST function is starting...")
     node_list = data["node_list"]
     new_id = data["new_id"]
-    #todo update here
+    # todo update here
     try:
         response = requests.post(
             config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] + endpoints.node_update_replicate,
@@ -214,16 +214,22 @@ def determine_correct_node(hashed_key, finger_table, self_ID):
     closest_preceding_finger = {'uid': common.my_uid, 'ip': common.my_ip, 'port': common.my_port}
 
     # Check if the hashed key falls within the current node's responsibility
-    next_node_ID = int(common.nids[1]['uid'], 16)
-    if is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
+    prev_node_id = int(common.nids[0]['uid'], 16)
+    if is_responsible_for_key(hashed_key_int, prev_node_id, self_ID):
         if config.NDEBUG:
             print(yellow("[determine_correct_node] i am responsible for the file: " + hashed_key))
         return closest_preceding_finger
 
+    next_node_id = int(common.nids[1]['uid'], 16)
+    if is_responsible_for_key(hashed_key_int, self_ID, next_node_id):
+        if config.NDEBUG:
+            print(yellow("[determine_correct_node] my next neighbor am responsible for the file: " + hashed_key))
+        return common.nids[1]
+
     # Iterate through the finger table to find the responsible node
     for entry in reversed(finger_table):
         node_id = int(entry['node']['uid'], 16)
-        if is_in_range(hashed_key_int, self_ID, node_id):
+        if hashed_key_int <= node_id:
             if config.NDEBUG:
                 print(yellow("[determine_correct_node] responsible node found: " + (str(entry['node']))))
             return entry['node']
@@ -235,15 +241,15 @@ def determine_correct_node(hashed_key, finger_table, self_ID):
     return common.nids[1]
 
 
-def is_responsible_for_key(hashed_key_int, self_ID, next_node_ID):
+def is_responsible_for_key(hashed_key_int, first_node_id, sec_node_id):
     """
     Check if the current node is responsible for the given key in a circular ID space.
     """
     if config.vNDEBUG:
-        print(blue("[is_responsible_for_key] para: " + self_ID + " " + next_node_ID + " " + hashed_key_int))
-    if self_ID < next_node_ID:
-        return self_ID < hashed_key_int <= next_node_ID
-    return self_ID < hashed_key_int or hashed_key_int <= next_node_ID
+        print(blue("[is_responsible_for_key] para: " + sec_node_id + " " + first_node_id + " " + hashed_key_int))
+    if sec_node_id > first_node_id:
+        return first_node_id < hashed_key_int <= sec_node_id
+    return first_node_id < hashed_key_int or hashed_key_int <= sec_node_id
 
 
 def is_in_range(key, self_ID, node_id):
@@ -396,15 +402,15 @@ def query_file_in_the_chord(request_node, filename):
         print(red("i am responsible for the file, but i dont have the file"))
         send_query_result(request_node, "File not found in chord", filename)
 
-        #todo check if the file is in replica node
+        # todo check if the file is in replica node
         return "404"
 
     # forward the request to the correct node
-    response = requests.get(config.ADDR + node['ip'] + ":" + node['port'] + endpoints.node_chain_query_file,
+    response = requests.post(config.ADDR + node['ip'] + ":" + node['port'] + endpoints.node_chain_query_file,
                             data={"filename": filename, "request_node": json.dumps(request_node)})
 
     if response.status_code == 200 and response.text == "success":
-        print(red("i am not reponsible for the file, but i send query to the node"),node['ip'], node['port'])
+        print(red("i am not reponsible for the file, but i send query to the node"), node['ip'], node['port'])
         return "success"
     else:
         print(red("something wrong when querying file"), response.text, response.status_code)
@@ -429,10 +435,9 @@ def send_query_result(request_node, res, filename):
         res = json.dumps(res)
     # send the result to the request node
     response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.node_query_result,
-                                data={"res": res, "filename": filename})
+                             data={"res": res, "filename": filename})
 
     if response.status_code == 200 and response.text == "success":
         print(red("i have sent the query result to the request node"))
     else:
         print(red("something wrong when sending query result"), response.text, response.status_code)
-
