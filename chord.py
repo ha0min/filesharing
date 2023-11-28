@@ -569,6 +569,44 @@ def query_file_in_the_chord(request_node, filename):
 
     # first check if it is in my host file list
     if filename in common.host_file_list:
+        # if the file is in my host file list, but not exist in my host file dir
+        if not os.path.exists(common.node_host_file_dir + filename + ".pdf"):
+            print(red(f"i should have file{filename}, but i dont have it in my host file dir"))
+            # check if the file is in replica node
+            if common.k == 0:
+                print(red(f"replication is not enabled, so i dont have the file, removing.."))
+                common.host_file_list.remove(filename)
+                return "404"
+            else:
+                print(red(f"replication is enabled, so i check the next {common.k} replica node"))
+                # check the next k replica node
+                response = requests.get(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] +
+                                        endpoints.node_chain_query_replica,
+                                        params={"filename": filename, "remaining_k": str(common.k),
+                                                "origin_node_ip": common.my_ip, "origin_node_port": common.my_port})
+
+                if response.status_code == 200:
+                    res = response.json()
+                    if res["status"] == "ok":
+                        replica_node = res["replica_node"]
+                        print(red(f"the file in replica node {replica_node['ip']}:{replica_node['port']}, "
+                                  f"so i will start a new thread to request that file"))
+                        # start a new thread to request the file from the replica node
+                        t = threading.Thread(target=get_replica_file_from_node,
+                                             args=(replica_node, filename))
+
+                        # send query result to the request node
+                        my_info = {'uid': common.my_uid, 'ip': common.my_ip, 'port': common.my_port}
+                        send_query_result(request_node, my_info, filename)
+                        return "success"
+                    else:
+                        print(red(f"no such file in replica node, so returning 404 and delete the file"))
+                        common.host_file_list.remove(filename)
+                        return "404"
+                else:
+                    print(red(f"chain query replica failed, return 404 and delete the file"))
+                    common.host_file_list.remove(filename)
+                    return "404"
         print(red("i have the file, now i tell the request node to get it from me"))
         my_info = {'uid': common.my_uid, 'ip': common.my_ip, 'port': common.my_port}
         send_query_result(request_node, my_info, filename)
@@ -581,8 +619,6 @@ def query_file_in_the_chord(request_node, filename):
     if node['uid'] == common.my_uid:
         print(red("i am responsible for the file, but i dont have the file"))
         send_query_result(request_node, "File not found in chord", filename)
-
-        # todo check if the file is in replica node
         return "404"
 
     # forward the request to the correct node
@@ -596,6 +632,29 @@ def query_file_in_the_chord(request_node, filename):
         print(red("something wrong when querying file"), response.text, response.status_code)
         return "404"
 
+
+def get_replica_file_from_node(replica_node, filename):
+    """
+    Get the replica file from the replica node.
+    :param replica_node:
+    :param filename:
+    :return:
+    """
+    # get the node ip and port
+    node_ip = replica_node['ip']
+    node_port = replica_node['port']
+
+    # send the result to the request node
+    response = requests.get(config.ADDR + node_ip + ":" + node_port + endpoints.node_get_replica_file,
+                            params={"filename": filename})
+
+    if response.status_code == 200:
+        # save the file to the local
+        with open(common.node_host_file_dir + filename + ".pdf", "wb") as f:
+            f.write(response.content)
+        print(red("i have got the replica file from the replica node"))
+    else:
+        print(red("something wrong when getting replica file"), response.text, response.status_code)
 
 def send_query_result(request_node, res, filename):
     """

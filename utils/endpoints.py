@@ -73,6 +73,12 @@ node_please_replica = '/node/please_replica'
 global node_check_file_exist # GET: check if the file exist in the node {file name}
 node_check_file_exist = '/node/check_file_exist'
 
+global node_chain_query_replica # GET: query a file in the chord p:{filename, remaining_k}
+node_chain_query_replica = '/node/query_replica_in_the_chord'
+
+global node_get_replica_file # GET: query a replica file in the chord p:{filename}
+node_get_replica_file = '/node/get_replica_file'
+
 # ----------------------------------------------
 # user endpoints
 

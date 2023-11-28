@@ -48,6 +48,7 @@ def ping():
     """
     return "pong"
 
+
 # ----------------------------------------------
 # supernode endpoints
 
@@ -72,6 +73,7 @@ def boot_leave():
         return boot_leave_func(node_info)
     else:
         print(red(f"This is not the bootstrap node and not allowed for {endpoints.boot_leave}."))
+
 
 # ----------------------------------------------
 # node endpoints
@@ -318,6 +320,47 @@ def chain_query_file():
     return "success", 200
 
 
+@app.route(endpoints.node_chain_query_replica, methods=['GET'])
+def chain_query_replica():
+    # check param contains filename and remaining_k, and node info{uid, ip, port}
+    if 'filename' not in request.args or 'remaining_k' not in request.args or 'origin_node_ip' not in request.args or 'origin_node_port' not in request.args:
+        return 'Please provide a filename or remaining_k or origin_node_ip or origin_node_port', 400
+
+    filename = request.args.get('filename', '')
+    filename = secure_filename(filename)
+
+    remaining_k = request.args.get('remaining_k', '')
+    origin_node_ip = request.args.get('origin_node_ip', '')
+    origin_node_port = request.args.get('origin_node_port', '')
+
+    print(red(f"i got a request to check if i have the replica of {filename}"))
+
+    # check if i have the replica
+    if filename in common.replica_file_list:
+        if os.path.exists(common.node_replicate_file_dir + filename + '.pdf'):
+            print(red(f"i have the replica of {filename}"))
+            return json.dumps(
+                {"status": "ok", "replica_node": {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}})
+
+    if remaining_k == 1:
+        print(red(f"the remaining_k is 1, i am the last one should replicate it, but i don't have, so file lost"))
+        return json.dumps({"status": "no"})
+
+    # if i don't have the replica, i will find the node who has the replica
+    print(red(f"i don't have the replica of {filename}, i will chain query the next {remaining_k} nodes"))
+    response = requests.get(config.ADDR + common.nids[1]["ip"] + ":" + common.nids[1]["port"] +
+                            endpoints.node_chain_query_replica +
+                            "?filename=" + filename + "&remaining_k=" + str(int(remaining_k) - 1)
+                            + "&origin_node_ip=" + origin_node_ip + "&origin_node_port=" + origin_node_port)
+
+    if response.status_code == 200:
+        print(red(f"i got the response from the chain {response.json()}"))
+        return response.json()
+
+    return json.dumps({"status": "no"})
+
+
+
 @app.route(endpoints.node_query_result, methods=['POST'])
 def node_query_result():
     """
@@ -400,7 +443,6 @@ def node_update_k():
 
 @app.route(endpoints.node_please_replica, methods=['POST'])
 def node_please_replica_handler():
-
     # check if the form has filename, node_info, remaining_k
     if 'filename' not in request.form or 'host_node' not in request.form or 'remaining_k' not in request.form:
         return 'Please provide a filename and host_node and remaining_k', 400
@@ -447,6 +489,33 @@ def node_check_file_exist_handler():
         return "yes", 200
     else:
         return "no", 200
+
+
+@app.route(endpoints.node_get_replica_file, methods=['GET'])
+def node_get_replica_file_handler():
+    """
+    get the file from the node
+    """
+    if 'filename' not in request.args:
+        return 'Please provide a filename', 400
+
+    filename = request.args.get('filename', '')
+    filename = secure_filename(filename)
+
+    if config.vNDEBUG:
+        print(yellow(f"i am going to get the file {filename}"))
+
+    if filename in common.replica_file_list:
+        filepath = common.node_replicate_file_dir + filename + '.pdf'
+        if os.path.exists(filepath):
+            return send_file(filepath, as_attachment=True)
+        else:
+            print(red(f"the file {filename} is not exist in the node, removing.."))
+            common.replica_file_list.remove(filename)
+            return "not found", 404
+    else:
+        print(red(f"the file {filename} is not in replica list"))
+        return "not found", 404
 
 
 # ------------------ user endpoints ------------------
