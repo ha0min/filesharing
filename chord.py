@@ -296,9 +296,38 @@ def node_start_k_replication():
             print(yellow(f"replicating file {file}"))
         # host node is me
         node_info = {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}
-        threading.Thread(target=replicate_file, args=(node_info, common.k, file)).start()
+        threading.Thread(target=replicate_chain_start, args=(node_info, common.k, file)).start()
 
     print(red("k replication finished"))
+
+
+def replicate_chain_start(node_info, k, filename):
+    """
+    start the replication chain
+    :param node_info: {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}
+    :param k: k replication
+    :param filename:
+    :return:
+    """
+    if k == 0:
+        return
+
+    if config.NDEBUG:
+        print(yellow(f"[replicate_chain_start] {filename} to {node_info} with k={k}"))
+
+    next_node = common.nids[1]
+    print(red(f"starting replicate chain for file {filename} to my neighbor {next_node} with k={k}"))
+    response = requests.post(
+        config.ADDR + next_node['ip'] + ":" + next_node['port'] + endpoints.node_please_replica,
+        data={"host_node": json.dumps(node_info), "remaining_k": k,
+              "filename": filename})
+
+    if response.status_code == 200 and response.text == "success":
+        print(red(f"replication for {filename} should start now"))
+        return "success"
+    else:
+        print(red(f"something wrong when sending replica chain for {filename}"), response.text, response.status_code)
+        return "error"
 
 
 # ----------------------Syllabus Function---------------------------------------
@@ -594,32 +623,6 @@ def send_query_result(request_node, res, filename):
         print(red("something wrong when sending query result"), response.text, response.status_code)
 
 
-def send_replica_info_to_chord(host_node, remaining_k, filename):
-    """
-    send a replica list to the chord by k neighbors
-    :param filename:
-    :param host_node:
-    :param remaining_k:
-    :return:
-    """
-    if config.NDEBUG:
-        print(yellow(f"[send_replica_to_chord] {host_node} send replica to chord by {remaining_k} neighbors"))
-
-    next_node = common.nids[1]
-    print(red(f"i am sending a request to my next neighour, "
-              f"{next_node['ip']}:{next_node['port']} to replicate the file {filename} "
-              f"from node {host_node['ip']}:{host_node['port']}"))
-
-    response = requests.post(config.ADDR + next_node['ip'] + ":" + next_node['port'] + endpoints.node_please_replica,
-                             data={"host_node": json.dumps(host_node), "remaining_k": remaining_k,
-                                   "filename": filename})
-
-    if response.status_code == 200 and response.text == "success":
-        print(red("i have sent the replica list to the chord"))
-    else:
-        print(red("something wrong when sending replica list"), response.text, response.status_code)
-
-
 def replicate_file(host_node, remaining_k, filename):
     """
     replicate the file from host_node
@@ -629,14 +632,14 @@ def replicate_file(host_node, remaining_k, filename):
     :return:
     """
     if config.NDEBUG:
-        print(yellow(f"[replicate_file] {host_node} replicate file {filename} from {host_node}"))
+        print(yellow(f"[replicate_file] i am replicate file {filename} from {host_node}, with {remaining_k} remaining"))
 
     # get the node ip and port
     node_ip = host_node['ip']
     node_port = host_node['port']
 
     # send request to the host node, it should return a file
-    response = requests.get(config.ADDR + node_ip + ":" + node_port + endpoints.user_get_file +
+    response = requests.get(config.ADDR + node_ip + ":" + str(node_port) + endpoints.user_get_file +
                             "?filename=" + filename)
 
     if response.status_code == 200:
@@ -652,7 +655,6 @@ def replicate_file(host_node, remaining_k, filename):
             if common.replica_file_list[filename]['timestamp'] > timestamp:
                 print(red("the file is older, i will not save it"))
                 return "success"
-
 
         # save the file to the local
         with open(common.node_replicate_file_dir + filename + ".pdf", "wb") as f:
@@ -671,7 +673,7 @@ def replicate_file(host_node, remaining_k, filename):
         # send the file to the next node
         if remaining_k > 1:
             next_node = common.nids[1]
-            print(red(f"remaining {remaining_k} replica, my next neighour "
+            print(red(f"remaining {remaining_k - 1} replica, my next neighour "
                       f"{next_node['ip']}:{next_node['port']} should replicate the file {filename} "
                       f"from node {host_node['ip']}:{host_node['port']}"))
 
@@ -681,10 +683,11 @@ def replicate_file(host_node, remaining_k, filename):
                       "filename": filename})
 
             if response.status_code == 200 and response.text == "success":
-                print(red("i have sent the replica list to the chord"))
+                print(red("replicate request sent to the next node successfully"))
                 return "success"
             else:
-                print(red("something wrong when sending replica list"), response.text, response.status_code)
+                print(red("something wrong when sending replicate request to next node"), response.text,
+                      response.status_code)
                 return "error"
     else:
         if config.NDEBUG:

@@ -281,7 +281,8 @@ def file_from_redistribute():
     file.save(filepath)
 
     # update host file list
-    common.host_file_list.append(filename)
+    if filename not in common.host_file_list:
+        common.host_file_list.append(filename)
 
     return 'i have host the file', 200
 
@@ -347,9 +348,11 @@ def node_legacy_transfer():
     filepath = common.node_host_file_dir + filename + '.pdf'
     file.save(filepath)
 
-    common.host_file_list.append(filename)
+    # update host file list
+    if filename not in common.host_file_list:
+        common.host_file_list.append(filename)
 
-    print(red(f"i am got a file {filename} from legacy node {request.form.get('node_info', '')}"))
+    print(red(f"i am got a legacy file {filename} from node {request.form.get('node_info', '')}"))
 
     return "store legacy success", 200
 
@@ -387,15 +390,16 @@ def node_update_k():
 def node_please_replica_handler():
 
     # check if the form has filename, node_info, remaining_k
-    if 'filename' not in request.form or 'node_info' not in request.form or 'remaining_k' not in request.form:
-        return 'Please provide a filename and node_info and remaining_k', 400
+    if 'filename' not in request.form or 'host_node' not in request.form or 'remaining_k' not in request.form:
+        return 'Please provide a filename and host_node and remaining_k', 400
 
     filename = request.form.get('filename', '')
     filename = secure_filename(filename)
 
-    node_info = json.loads(request.form.get('node_info', ''))
+    node_info = json.loads(request.form.get('host_node', ''))
     remaining_k = int(request.form.get('remaining_k', ''))
 
+    print(red(f"got a request to replicate a file {filename} from node {node_info}, remaining_k is {remaining_k}"))
 
     # check if the file exist in the node
     response = requests.get(f"{config.ADDR}{node_info['ip']}:{node_info['port']}{endpoints.node_check_file_exist}"
@@ -404,7 +408,8 @@ def node_please_replica_handler():
     if response.status_code == 200 and response.text == 'yes':
         # start replication
         print(red(f"the node has the file, i am going to replicate a file {filename} from node {node_info}"))
-        threading.Thread(target=replicate_file, args=(node_info, filename, remaining_k,)).start()
+        threading.Thread(target=replicate_file, args=(node_info, remaining_k, filename,)).start()
+        return "success", 200
     else:
         print(red(f"file {filename} not exist in the node{node_info}, chain request replicate stop, "
                   f"remaining_k is {remaining_k}"))
