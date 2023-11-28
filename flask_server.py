@@ -9,6 +9,7 @@
 @Contact: haomin.cheng@outlook.com
 
 """
+import argparse
 import os
 import re
 import sys
@@ -244,7 +245,7 @@ def file_from_upload_node():
         print(red(f"the replication factor is 0, i don't replicate the file{filename}"))
     else:
         print(red(f"the replication factor is {common.k}, i will replicate the file{filename}"))
-        node_info = {"uid": common.node_uid, "ip": common.node_ip, "port": common.node_port}
+        node_info = {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}
         response = replicate_chain_start(node_info=node_info, filename=filename, k=common.k)
         print(red(f"the start chain replication result is {response}"))
 
@@ -658,19 +659,23 @@ def get_file():
 
     return response
 
-
 def server_start():
     """
     Entry point of the flask server.
     :return:
     """
     common.server_starting = True
-    if len(sys.argv) < 3:  # should be -p port
+
+    args = parse_args()
+
+    # Validate and use the values as needed
+    if args.port is None:
         wrong_input_format()
-    if sys.argv[1] in ("-p", "-P"):
-        common.my_port = sys.argv[2]
-    else:
-        wrong_input_format()
+        return
+
+    common.my_port = args.port
+
+
     common.my_ip = get_my_ip()
     common.my_uid = hash(common.my_ip + ":" + common.my_port)
     common.node_file_dir = config.FILE_DIR + common.my_uid + "/"
@@ -678,12 +683,14 @@ def server_start():
     common.node_replicate_file_dir = common.node_file_dir + "replicate_files/"
     common.node_upload_file_dir = common.node_file_dir + "upload_files/"
 
-    if len(sys.argv) == 4 and sys.argv[3] in ("-b", "-B"):
+    if args.bootstrap:
         print("I am the Bootstrap Node with ip: " + yellow(
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
         print("and my unique id is: " + green(common.my_uid))
         print("and my file directory is: " + green(common.node_file_dir))
         common.is_bootstrap = True
+        common.k = args.input_k
+        print("and the system's replication factor is: " + green(common.k))
         init_server()
 
     else:
@@ -729,8 +736,7 @@ def wrong_input_format():
     print(red("Argument passing error!"))
     print(underline("Usage:"))
     print(cyan(
-        "-p port_to_open\n -k replication_factor (<= number of nodes)\n -c consistency_type ((linear,l) or (eventual,"
-        "e))\n -b for bootstrap node only"))
+        "-p port_to_open (required\n -b [ture, false] for setting server \n -k replication_factor (provide for server only)"))
     exit(0)
 
 
@@ -774,6 +780,14 @@ def is_valid_course_id(course_id):
     :return:
     """
     return re.match(r'^[A-Za-z]{4}\d+$', course_id)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Script description")
+    parser.add_argument('-b', '--bootstrap', help='bootstrap node')
+    parser.add_argument('-k', '--input_k', help='replication node count')
+    parser.add_argument('-p', '--port', '-P', required=True, help='Port number')
+    return parser.parse_args()
 
 
 if __name__ == '__main__':

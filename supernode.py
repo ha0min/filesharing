@@ -57,9 +57,15 @@ lock = threading.Lock()
 heartbeat_lock = threading.Lock()
 connected_clients_lock = threading.Lock()
 leader_lock = threading.Lock()
-s3_client = boto3.client('s3')
-s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
-s3_server = boto3.resource('s3')
+
+aws_access_key = 'AKIAZORESFWLVIBVAI6D'
+aws_secret_key = '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'
+region_name = 'us-east-2'
+
+# Create an S3 client
+s3_client = boto3.client('s3', aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key, region_name=region_name)
+# s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
+# s3_server = boto3.resource('s3')
 
 
 def is_leader_alive(leader):
@@ -93,7 +99,6 @@ def create_alive_file():
 
     # Check if the file already exists in the S3 bucket
     if not does_s3_object_exist(SERVER_BUCKET_NAME, file_key):
-        s3_client = boto3.client('s3')
         s3_client.put_object(
             Bucket=SERVER_BUCKET_NAME,
             Key=file_key,
@@ -105,9 +110,8 @@ def create_alive_file():
 
 
 def read_leader_config():
-    s3 = boto3.client("s3")
     try:
-        response = s3.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
         content = response["Body"].read().decode("utf-8")
 
         print(red(f"[read_leader_config] content {content}"))
@@ -118,7 +122,7 @@ def read_leader_config():
     except json.JSONDecodeError:
         # Handle invalid JSON content
         return None
-    except s3.exceptions.NoSuchKey:
+    except s3_client.exceptions.NoSuchKey:
         # Handle file not found
         return None
     except Exception as e:
@@ -131,12 +135,11 @@ def get_node_list_from_s3():
         print(red("running locally, not getting node list from s3"))
         return common.mids
 
-    s3 = boto3.client('s3')
     try:
-        response = s3.get_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE)
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE)
         node_list = json.loads(response['Body'].read().decode('utf-8'))
         return node_list
-    except s3.exceptions.NoSuchKey:
+    except s3_client.exceptions.NoSuchKey:
         return []
 
 
@@ -154,8 +157,7 @@ def save_node_list_to_s3(node_list):
         print(red("running locally, not saving node list to s3"))
         return
 
-    s3 = boto3.client('s3')
-    s3.put_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE, Body=json.dumps(node_list).encode('utf-8'))
+    s3_client.put_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE, Body=json.dumps(node_list).encode('utf-8'))
     update_local_node_list()
 
 
@@ -179,8 +181,7 @@ def write_leader_config(data):
 
     print(red(f"[write_leader_config] data {data}"))
 
-    s3 = boto3.client("s3")
-    s3.put_object(Body=json.dumps(data).encode('utf-8'), Bucket=BUCKET_NAME, Key=LEADER_FILE)
+    s3_client.put_object(Body=json.dumps(data).encode('utf-8'), Bucket=BUCKET_NAME, Key=LEADER_FILE)
 
 
 def get_object_from_s3(s3_client, bucket_name, key):
@@ -209,8 +210,6 @@ def remove_alive_file():
         return
 
     file_key = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
-    s3_client = boto3.client('s3')
-
     try:
         s3_client.delete_object(Bucket=SERVER_BUCKET_NAME, Key=file_key)
         print(f"Alive file {file_key} successfully removed from bucket {SERVER_BUCKET_NAME}.")
@@ -247,7 +246,7 @@ def get_all_available_servers():
     This function returns a list of all available servers.
     :return:
     """
-    available_servers = s3_server_bucket.objects.all()
+    available_servers = s3_client.list_objects(Bucket=SERVER_BUCKET_NAME)
     print(cyan("Available servers"), str(available_servers))
     return available_servers
 
