@@ -282,6 +282,25 @@ def node_update_finger_table_func(res):
         common.node_updating_finger_table = False
 
 
+def node_start_k_replication():
+    """
+    start k replication
+    :return:
+    """
+    print(red(f"Starting a new k replication with k={common.k}, i will replicate all my hosted files"))
+
+    print(red(f"my host file list is: {common.host_file_list}"))
+
+    for file in common.host_file_list:
+        if config.NDEBUG:
+            print(yellow(f"replicating file {file}"))
+        # host node is me
+        node_info = {"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port}
+        threading.Thread(target=replicate_file, args=(node_info, common.k, file)).start()
+
+    print(red("k replication finished"))
+
+
 # ----------------------Syllabus Function---------------------------------------
 def hash(key):
     return hashlib.sha1(key.encode('utf-8')).hexdigest()
@@ -575,25 +594,100 @@ def send_query_result(request_node, res, filename):
         print(red("something wrong when sending query result"), response.text, response.status_code)
 
 
-def files_need_to_be_replicated(origin_node, k, filename):
+def send_replica_info_to_chord(host_node, remaining_k, filename):
     """
-    Replicate files to the new node based on the hash keys.
-    :param origin_node: {uid, ip, port} of the origin node
-    :param k: number of nodes to replicate
-    :param filename: filename to replicate, should be hashed
+    send a replica list to the chord by k neighbors
+    :param filename:
+    :param host_node:
+    :param remaining_k:
+    :return:
     """
     if config.NDEBUG:
-        print(yellow(f"[files_need_to_be_replicated] {origin_node} replicate file {filename} to {k} nodes"))
+        print(yellow(f"[send_replica_to_chord] {host_node} send replica to chord by {remaining_k} neighbors"))
 
-    # Files to replicate to the new node
-    files_to_replicate = []
+    next_node = common.nids[1]
+    print(red(f"i am sending a request to my next neighour, "
+              f"{next_node['ip']}:{next_node['port']} to replicate the file {filename} "
+              f"from node {host_node['ip']}:{host_node['port']}"))
 
-    # Identify files that should be replicated to the new node
-    for i in range(k):
-        hashed_name_int = int(filename, 16)
-        node_id = (hashed_name_int + 2 ** i) % 2 ** 160
+    response = requests.post(config.ADDR + next_node['ip'] + ":" + next_node['port'] + endpoints.node_please_replica,
+                             data={"host_node": json.dumps(host_node), "remaining_k": remaining_k,
+                                   "filename": filename})
 
-        if is_responsible_for_key(node_id, int(origin_node['uid'], 16), int(common.my_uid, 16)):
-            files_to_replicate.append(filename)
+    if response.status_code == 200 and response.text == "success":
+        print(red("i have sent the replica list to the chord"))
+    else:
+        print(red("something wrong when sending replica list"), response.text, response.status_code)
 
-    return files_to_replicate
+
+def replicate_file(host_node, remaining_k, filename):
+    """
+    replicate the file from host_node
+    :param filename:
+    :param host_node:
+    :param remaining_k:
+    :return:
+    """
+    if config.NDEBUG:
+        print(yellow(f"[replicate_file] {host_node} replicate file {filename} from {host_node}"))
+
+    # get the node ip and port
+    node_ip = host_node['ip']
+    node_port = host_node['port']
+
+    # send request to the host node, it should return a file
+    response = requests.get(config.ADDR + node_ip + ":" + node_port + endpoints.user_get_file +
+                            "?filename=" + filename)
+
+    if response.status_code == 200:
+        print(red("i have got the file from the host node"))
+
+        timestamp = response.headers.get('X-Timestamp')
+        # check if the new file if exists
+        if filename in common.replica_file_list:
+            if config.NDEBUG:
+                print(yellow(f"[replicate_file]file {filename} already exists, "
+                             f"with timestamp {common.replica_file_list[filename]['timestamp']}"))
+            # check if the new file is newer
+            if common.replica_file_list[filename]['timestamp'] > timestamp:
+                print(red("the file is older, i will not save it"))
+                return "success"
+
+
+        # save the file to the local
+        with open(common.node_replicate_file_dir + filename + ".pdf", "wb") as f:
+            f.write(response.content)
+
+        # add the file to the file list
+        common.replica_file_list.append({"filename": filename,
+                                         "is_last_replica": remaining_k == 1,
+                                         "timestamp": timestamp,
+                                         "origin_node": host_node})
+
+        if remaining_k == 1:
+            print(red("i am the last replica, i will not send the file to the next node"))
+            return "success"
+
+        # send the file to the next node
+        if remaining_k > 1:
+            next_node = common.nids[1]
+            print(red(f"remaining {remaining_k} replica, my next neighour "
+                      f"{next_node['ip']}:{next_node['port']} should replicate the file {filename} "
+                      f"from node {host_node['ip']}:{host_node['port']}"))
+
+            response = requests.post(
+                config.ADDR + next_node['ip'] + ":" + next_node['port'] + endpoints.node_please_replica,
+                data={"host_node": json.dumps(host_node), "remaining_k": remaining_k - 1,
+                      "filename": filename})
+
+            if response.status_code == 200 and response.text == "success":
+                print(red("i have sent the replica list to the chord"))
+                return "success"
+            else:
+                print(red("something wrong when sending replica list"), response.text, response.status_code)
+                return "error"
+    else:
+        if config.NDEBUG:
+            print(yellow("something wrong when getting file"), response.text, response.status_code)
+        print(red(f"failed to get the replicate file, the chain request has stopped, remaining {remaining_k} replicas"))
+        return "error"

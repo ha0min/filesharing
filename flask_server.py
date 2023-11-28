@@ -26,7 +26,7 @@ from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
     node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join, \
-    query_file_in_the_chord, init_node
+    query_file_in_the_chord, init_node, replicate_file, node_start_k_replication
 
 app = Flask(__name__)
 
@@ -372,13 +372,61 @@ def node_update_k():
     print(red(f"got instruction from server to update k to {k}"))
 
     if k == 0:
-        print(red(f"the k is set to zero, i am not going to replicate any file from this on"))
+        print(red(f"the k is set to zero, i am not going to replicate any file from now on"))
         pass
 
-    # todo start replication
+    node_start_k_replication()
 
     return "update k success", 200
 
+
+@app.route(endpoints.node_please_replica, methods=['POST'])
+def node_please_replica_handler():
+
+    # check if the form has filename, node_info, remaining_k
+    if 'filename' not in request.form or 'node_info' not in request.form or 'remaining_k' not in request.form:
+        return 'Please provide a filename and node_info and remaining_k', 400
+
+    filename = request.form.get('filename', '')
+    filename = secure_filename(filename)
+
+    node_info = json.loads(request.form.get('node_info', ''))
+    remaining_k = int(request.form.get('remaining_k', ''))
+
+
+    # check if the file exist in the node
+    response = requests.get(f"{config.ADDR}{node_info['ip']}:{node_info['port']}{endpoints.node_check_file_exist}"
+                            f"?filename={filename}")
+
+    if response.status_code == 200 and response.text == 'yes':
+        # start replication
+        print(red(f"the node has the file, i am going to replicate a file {filename} from node {node_info}"))
+        threading.Thread(target=replicate_file, args=(node_info, filename, remaining_k,)).start()
+    else:
+        print(red(f"file {filename} not exist in the node{node_info}, chain request replicate stop, "
+                  f"remaining_k is {remaining_k}"))
+
+        return "file not exist", 400
+
+
+@app.route(endpoints.node_check_file_exist, methods=['GET'])
+def node_check_file_exist_handler():
+    """
+    check if the file exist in the node
+    """
+    if 'filename' not in request.args:
+        return 'Please provide a filename', 400
+
+    filename = request.args.get('filename', '')
+    filename = secure_filename(filename)
+
+    if config.vNDEBUG:
+        print(yellow(f"i am going to check if i have the file {filename}"))
+
+    if filename in common.host_file_list:
+        return "yes", 200
+    else:
+        return "no", 200
 
 
 # ------------------ user endpoints ------------------
@@ -514,7 +562,13 @@ def get_file():
     if not os.path.exists(filepath):
         return 'File not found', 404
 
-    return send_file(filepath, as_attachment=True)
+    response = send_file(filepath, as_attachment=True)
+    timestamp = time.time()
+    response.headers['X-Timestamp'] = timestamp
+
+    print(red(f"file {filename} is sent to the user with timestamp {timestamp}"))
+
+    return response
 
 
 def server_start():

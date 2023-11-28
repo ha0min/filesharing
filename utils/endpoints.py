@@ -64,8 +64,14 @@ node_query_result = '/node/query_result'
 global node_legacy_transfer # POST: a node leaves, it transfers its files to its successor {filename name, file content}
 node_legacy_transfer = '/node/legacy_transfer'
 
-global node_update_k
+global node_update_k # POST: when the nodes number exceeds the replication factor, node start replicate
 node_update_k = '/node/update_k'
+
+global node_please_replica
+node_please_replica = '/node/please_replica'
+
+global node_check_file_exist # GET: check if the file exist in the node {file name}
+node_check_file_exist = '/node/check_file_exist'
 
 # ----------------------------------------------
 # user endpoints
