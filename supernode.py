@@ -34,7 +34,7 @@ SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5551
 LEADER_PORT = 4447
 NODE_ALIVE_PREFIX = 'node'
-LEADER_CHECK_INTERVAL = 60
+LEADER_CHECK_INTERVAL = 300
 
 connected_clients = {}
 nodes = [
@@ -114,7 +114,8 @@ def read_leader_config():
         response = s3_client.get_object(Bucket=BUCKET_NAME, Key=LEADER_FILE)
         content = response["Body"].read().decode("utf-8")
 
-        print(red(f"[read_leader_config] content {content}"))
+        if config.BDEBUG:
+            print(blue(f"[read_leader_config] content {content}"))
         if not content:
             # Handle empty file content
             return None
@@ -230,7 +231,9 @@ def get_new_leader_from_list(server_list):
 
     for file in server_list:
         # Extracting the file name
-        file_key = file.key
+        file_key = file["Key"]
+        print(cyan("file_key"), str(file_key))
+
         # Splitting the file name to get the node_id
         node_id = file_key.split('_')[0]
 
@@ -247,8 +250,8 @@ def get_all_available_servers():
     :return:
     """
     available_servers = s3_client.list_objects(Bucket=SERVER_BUCKET_NAME)
-    print(cyan("Available servers"), str(available_servers))
-    return available_servers
+    print(cyan("Available servers"), str(available_servers["Contents"]))
+    return available_servers["Contents"]
 
 
 def remove_server_from_leader_config():

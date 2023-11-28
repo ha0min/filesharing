@@ -15,7 +15,7 @@
 # The system global variable
 
 global k  # number of replicas
-k = 1
+k = 0
 
 # --------------------------------------------------------
 # The node's global variable
@@ -54,7 +54,7 @@ global current_leader
 # --------------------------------------------------------
 # The File global variable
 global replica_file_list
-replica_file_list = []
+replica_file_list = {}
 global host_file_list
 host_file_list = []
 

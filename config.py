@@ -14,7 +14,7 @@ import os
 cwd = os.getcwd()  # Get the current working directory (cwd)
 
 LOCAL_BOOTSTRAP_IP = "127.0.0.1"  #TODO fix this
-EC2_BOOTSTRAP_IP = "3.133.123.146"
+EC2_BOOTSTRAP_IP = "172.31.240.178"
 BOOTSTRAP_IP = EC2_BOOTSTRAP_IP
 BASE_DIR = cwd + '/'
 BOOTSTRAP_PORT = "10500"
@@ -25,6 +25,6 @@ TDEBUG = False  # debug information fot test operations
 vBDEBUG = False  # extra verbose debug information for bootstrap operations
 vNDEBUG = False  # extra verbose debug information for node operations
 
-LOCAL_SERVER = True # if True, the server will be run locally, else it will be run on the AWS
+LOCAL_SERVER = False # if True, the server will be run locally, else it will be run on the AWS
 
 FILE_DIR = BASE_DIR + 'files/'

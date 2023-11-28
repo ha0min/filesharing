@@ -244,6 +244,7 @@ def node_update_neighbours_func(data):
     :param data:
     :return:
     """
+    print(yellow(data))
     common.nids[0] = data["prev"]
     common.nids[1] = data["next"]
     change_neighbor = data["change"]  # either "prev" or "next"
@@ -656,6 +657,7 @@ def get_replica_file_from_node(replica_node, filename):
     else:
         print(red("something wrong when getting replica file"), response.text, response.status_code)
 
+
 def send_query_result(request_node, res, filename):
     """
     Send the query result back to the request node.
@@ -720,10 +722,9 @@ def replicate_file(host_node, remaining_k, filename):
             f.write(response.content)
 
         # add the file to the file list
-        common.replica_file_list.append({"filename": filename,
-                                         "is_last_replica": remaining_k == 1,
-                                         "timestamp": timestamp,
-                                         "origin_node": host_node})
+        common.replica_file_list[filename] = {"is_last_replica": remaining_k == 1,
+                                              "timestamp": timestamp,
+                                              "origin_node": host_node}
 
         if remaining_k == 1:
             print(red("i am the last replica, i will not send the file to the next node"))

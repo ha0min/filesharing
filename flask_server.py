@@ -164,8 +164,8 @@ def update_finger_table():
     if 'finger_table' not in res or 'timestamp' not in res:
         return "Invalid request format: 'timestamp' or'finger_table' key missing", 400
 
-    if config.NDEBUG:
-        print(yellow("Updating finger table..."))
+    if config.vNDEBUG:
+        print(blue("Updating finger table..."))
         print(str(res))
 
     return node_update_finger_table_func(res)
@@ -330,7 +330,7 @@ def chain_query_replica():
     filename = request.args.get('filename', '')
     filename = secure_filename(filename)
 
-    remaining_k = request.args.get('remaining_k', '')
+    remaining_k = int(request.args.get('remaining_k', ''))
     origin_node_ip = request.args.get('origin_node_ip', '')
     origin_node_port = request.args.get('origin_node_port', '')
 
@@ -426,7 +426,8 @@ def node_update_k():
 
     # check if the request is sent by the server
     if request.remote_addr != config.BOOTSTRAP_IP:
-        return 'You are not the server', 403
+        print(red(f"the request is not sent by the server"))
+        # return 'You are not the server', 403
 
     k = request.form.get('k', '')
     common.k = int(k)
@@ -689,7 +690,7 @@ def server_start():
         print("and my unique id is: " + green(common.my_uid))
         print("and my file directory is: " + green(common.node_file_dir))
         common.is_bootstrap = True
-        common.k = args.input_k
+        common.k = int(args.input_k)
         print("and the system's replication factor is: " + green(common.k))
         init_server()
 
