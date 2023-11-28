@@ -159,6 +159,19 @@ def save_node_list_to_s3(node_list):
     update_local_node_list()
 
 
+def delete_node_from_node_list(node):
+    get_node_list_from_s3()
+
+    if node not in common.mids:
+        print(red(f"Node {node} not in node list"))
+        return
+
+    print(red(f"delete_node {node} _from_node_list"))
+
+    common.mids.remove(node)
+    save_node_list_to_s3(common.mids)
+
+
 def write_leader_config(data):
     if config.LOCAL_SERVER:
         print(red("running locally, not writing leader config"))
@@ -557,6 +570,25 @@ def boot_leave_func(node_info):
     
     node_idx = common.mids.index(node_info)
     print(red(f"Node {node_info['uid']} with {node_info['ip']}:{node_info['port']} asking to leave the network..."))
+
+    print(red(f"so we have only {len(common.mids)-1} nodes in the network after it leave..."))
+
+    if len(common.mids) == 1:
+        print(red(f"Node {node_info['uid']} is the last node in the network, so it can just dead"))
+        delete_node_from_node_list(node_info)
+        return "last node, just die", 200
+
+    if len(common.mids) == 2:
+        print(red(f"Node {node_info['uid']} is the second last node in the network, so the last node will be the "
+                  f"specially handled"))
+
+        next = common.mids[node_idx + 1] if node_idx < len(common.mids) - 1 else common.mids[0]
+        response = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
+                                    json={"prev": next, "next": next, "change": "prev"})
+        if response.status_code == 200 and response.text == "new neighbours set":
+            print(red(f"Updated neighbours of {next['ip']}:{next['port']} specially successfully"))
+        delete_node_from_node_list(node_info)
+        return "you are ok to die", 200
 
     prev_of_prev = common.mids[node_idx - 2] if node_idx >= 2 else (
         common.mids[-1] if node_idx >= 1 else common.mids[-2])

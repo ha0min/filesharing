@@ -38,19 +38,25 @@ def init_node():
 
         retry_count = 0
         max_retries = 3  # Set a max retry limit
-        server_res = False
+        dead = False
 
-        while not server_res and retry_count < max_retries:
+        while not dead and retry_count < max_retries:
             server_res = node_init_leave()
-            if not server_res:
+            if server_res == "error":
                 print(red(f"Leave attempt {retry_count + 1} failed. Retrying..."))
                 time.sleep(5)  # Wait for second before retrying
                 retry_count += 1
+            else:
+                dead = True
 
-        if not server_res:
+        if not dead:
             print(red("Unable to leave gracefully after multiple attempts. Forcing exit."))
 
-        transfer_my_hosted_files()
+        # Transfer my hosted files to my successor
+        if dead and not server_res == "last node, just die":
+            transfer_my_hosted_files()
+        else:
+            print(red("I am the last node, no need to transfer legacy files"))
 
         print(red(f"Goodbye! I am dead now. {common.my_uid}, {common.my_ip}:{common.my_port}"))
         common.still_on_chord = False
@@ -67,6 +73,8 @@ def node_initial_join():
             if config.NDEBUG:
                 print(yellow("\nattempting to join the Chord..."))
             try:
+                # target = config.LOCAL_SERVER ? config.LOCAL_BOOTSTRAP_IP :config.BOOTSTRAP_IP
+                config.BOOTSTRAP_IP = config.LOCAL_BOOTSTRAP_IP if config.LOCAL_SERVER else config.EC2_BOOTSTRAP_IP
                 response = requests.post(
                     config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.boot_join,
                     data={"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})
@@ -105,11 +113,14 @@ def node_init_leave():
 
     if response.status_code == 200 and response.text == "you are ok to die":
         print(red(f"server allows to leave..."))
-        return True
+        return "server allows to leave"
+    elif response.status_code == 200 and response.text == "last node, just die":
+        print(red(f"server allows to leave, i am the last node..."))
+        return "last node, just die"
     else:
         print(red(f"i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
                   f"and server response {response.text} with {response.status_code}"))
-        return False
+        return "error"
 
 
 def transfer_my_hosted_files():
