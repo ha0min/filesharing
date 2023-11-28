@@ -26,7 +26,7 @@ from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
     node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join, \
-    query_file_in_the_chord, init_node, replicate_file, node_start_k_replication
+    query_file_in_the_chord, init_node, replicate_file, node_start_k_replication, replicate_chain_start
 
 app = Flask(__name__)
 
@@ -235,6 +235,17 @@ def file_from_upload_node():
     if filename not in common.host_file_list:
         common.host_file_list.append(filename)
 
+    print(red(f"upload node send me the {filename} to host, i save it in my host folder"))
+
+    # replicate
+    if common.k == 0:
+        print(red(f"the replication factor is 0, i don't replicate the file{filename}"))
+    else:
+        print(red(f"the replication factor is {common.k}, i will replicate the file{filename}"))
+        node_info = {"uid": common.node_uid, "ip": common.node_ip, "port": common.node_port}
+        response = replicate_chain_start(node_info=node_info, filename=filename, k=common.k)
+        print(red(f"the start chain replication result is {response}"))
+
     return 'File saved', 200
 
 
@@ -285,6 +296,7 @@ def file_from_redistribute():
         common.host_file_list.append(filename)
 
     return 'i have host the file', 200
+
 
 @app.route(endpoints.node_chain_query_file, methods=['POST'])
 def chain_query_file():

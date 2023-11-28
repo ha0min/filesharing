@@ -323,7 +323,7 @@ def replicate_chain_start(node_info, k, filename):
               "filename": filename})
 
     if response.status_code == 200 and response.text == "success":
-        print(red(f"replication for {filename} should start now"))
+        print(red(f"chain replication for {filename} should start now"))
         return "success"
     else:
         print(red(f"something wrong when sending replica chain for {filename}"), response.text, response.status_code)
