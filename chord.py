@@ -426,7 +426,7 @@ def send_upload_file_to_node(request_node, filepath, filename):
     with open(filepath, 'rb') as f:
         files = {'file': f}
         response = requests.post(config.ADDR + node_ip + ":" + node_port + endpoints.file_from_upload_node, files=files,
-                                 data={"filename": filename})
+                                 data={"filename": filename, "timestamp": time.time()})
 
         if response.status_code == 200 and response.text == "File saved":
             print(red("File sent to the node"))

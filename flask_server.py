@@ -203,7 +203,7 @@ def request_upload_file():
         print(yellow(f"[request_upload_file] Response from node: {str(response)}"))
 
     # the file is sent to the chord, i can continue to upload other files
-    common.already_upload_to_chord = True
+    common.already_upload_to_chord[filename] = "ok"
     if response == 'File sent to the node':
         return 'File sent to the node', 200
     else:
@@ -215,14 +215,16 @@ def file_from_upload_node():
     """
     a file send from upload node, i am responsible for it.
     """
-    if 'file' not in request.files or 'filename' not in request.form:
-        return 'Please provide a file and a filename', 400
+    if 'file' not in request.files or 'filename' not in request.form or 'timestamp' not in request.form:
+        return 'Please provide a file and a filename and a timestamp', 400
 
     filename = request.form.get('filename', '')
     filename = secure_filename(filename)
 
+    timestamp = request.form.get('timestamp', time.time())
+
     if config.NDEBUG:
-        print(yellow(f"[file_from_upload_node] Requested file: {filename}"))
+        print(yellow(f"[file_from_upload_node] Requested file: {filename}, timestamp: {timestamp}"))
 
     # save the file in my host folder
     filepath = common.node_host_file_dir + filename + '.pdf'
@@ -230,7 +232,8 @@ def file_from_upload_node():
     file.save(filepath)
 
     # update host file list
-    common.host_file_list.append(filename)
+    if filename not in common.host_file_list:
+        common.host_file_list.append(filename)
 
     return 'File saved', 200
 
@@ -505,7 +508,7 @@ def upload_file():
 
     # Check if the filename matches the required format (4 letters and numbers)
     if not is_valid_course_id(filename):
-        return jsonify(message='Filename format is incorrect'), 400
+        return jsonify(message='inputed course_name error, should sth like CSEN317'), 400
 
     common.is_data_uploading = True
 
@@ -521,12 +524,11 @@ def upload_file():
     t = threading.Thread(target=upload_file_thread, args=(hashed_filename,))
     t.start()
 
-    while not common.already_upload_to_chord:
+    while hashed_filename not in common.already_upload_to_chord:
         print(yellow("waiting for a node in the chord to request my uploaded file to host..."))
         time.sleep(0.3)
 
-    common.already_upload_to_chord = False
-
+    del common.already_upload_to_chord[hashed_filename]
 
     return jsonify(message='File successfully uploaded'), 200
 

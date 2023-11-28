@@ -90,4 +90,4 @@ global is_sending_file
 is_sending_file = False
 
 global already_upload_to_chord  # true if one node request my uploaded file to host
-already_upload_to_chord = False
+already_upload_to_chord = {}
