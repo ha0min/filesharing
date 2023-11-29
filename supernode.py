@@ -58,9 +58,9 @@ heartbeat_lock = threading.Lock()
 connected_clients_lock = threading.Lock()
 leader_lock = threading.Lock()
 
-aws_access_key = 'AKIAZORESFWLVIBVAI6D'
-aws_secret_key = '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'
-region_name = 'us-east-2'
+aws_access_key = ''
+aws_secret_key = ''
+region_name = ''
 
 # Create an S3 client
 s3_client = boto3.client('s3', aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key, region_name=region_name)
