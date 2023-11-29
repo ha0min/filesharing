@@ -593,6 +593,14 @@ def boot_leave_func(node_info):
 
     print(red(f"so we have only {len(common.mids) - 1} nodes in the network after it leave..."))
 
+    # update k first, so the node would not casue infinite replicate after sending the update neighbours request
+    if common.node_k != 0:
+        if len(common.mids) - 1 <= common.k:
+            print(
+                red(f"there is no enough nodes in the network to keep the replication factor, so no replicate from now on"))
+            common.node_k = 0
+            update_nodes_replication_factor(0)
+
     if len(common.mids) == 1:
         print(red(f"Node {node_info['uid']} is the last node in the network, so it can just dead"))
         delete_node_from_node_list(node_info)
@@ -610,13 +618,7 @@ def boot_leave_func(node_info):
         delete_node_from_node_list(node_info)
         return "you are ok to die", 200
 
-    # update k first, so the node would not casue infinite replicate after sending the update neighbours request
-    if common.node_k != 0:
-        if len(common.mids) - 1 <= common.k:
-            print(
-                red(f"there is no enough nodes in the network to keep the replication factor, so no replicate from now on"))
-            common.node_k = 0
-            update_nodes_replication_factor(0)
+
 
     prev_of_prev = common.mids[node_idx - 2] if node_idx >= 2 else (
         common.mids[-1] if node_idx >= 1 else common.mids[-2])

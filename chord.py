@@ -56,7 +56,7 @@ def init_node():
         if dead and not server_res == "last node, just die":
             transfer_my_hosted_files()
         else:
-            print(red("I am the last node, no need to transfer legacy files"))
+            print(red("I no need to transfer legacy files"))
 
         print(red(f"Goodbye! I am dead now. {common.my_uid}, {common.my_ip}:{common.my_port}"))
         common.still_on_chord = False
@@ -122,6 +122,9 @@ def node_init_leave():
         return "server allows to leave"
     elif response.status_code == 200 and response.text == "last node, just die":
         print(red(f"server allows to leave, i am the last node..."))
+        return "last node, just die"
+    elif response.status_code == 400 and response.text == "you are not in network":
+        print(red(f"server says i am not in the network, just die..."))
         return "last node, just die"
     else:
         print(red(f"i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
@@ -335,6 +338,7 @@ def replicate_chain_start(node_info, k, filename):
     else:
         print(red(f"something wrong when sending replica chain for {filename}"), response.text, response.status_code)
         return "error"
+
 
 
 # ----------------------Syllabus Function---------------------------------------
