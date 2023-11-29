@@ -34,7 +34,7 @@ SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5551
 LEADER_PORT = 4447
 NODE_ALIVE_PREFIX = 'node'
-LEADER_CHECK_INTERVAL = 300
+LEADER_CHECK_INTERVAL = 120
 
 connected_clients = {}
 nodes = [
@@ -81,11 +81,12 @@ def is_leader_alive(leader):
     # Use a temporary socket to check if the leader is alive
     if leader['uid'] == common.my_uid:
         return True
-    print(red("[Server]"), ("Checking if leader is alive..." + leader['ip'] + ":" + str(leader['port'])))
-    response = requests.post(config.ADDR + leader['ip'] + ":" + str(leader['port']) + endpoints.ping)
+    print(red("[is_leader_alive]"), ("Checking if leader is alive:" + leader['ip'] + ":" + str(leader['port'])))
+    response = requests.get(config.ADDR + leader['ip'] + ":" + str(leader['port']) + endpoints.ping_server)
     if response.status_code == 200 and response.text == "pong":
         return True
     else:
+        print(red(f"[is_leader_alive] {leader['ip']}: {leader['port']} respond {response.status_code}, {response.text}"))
         return False
 
 
@@ -105,7 +106,8 @@ def create_alive_file():
         )
         print(f"Alive file created for node {common.my_uid} in bucket {SERVER_BUCKET_NAME} at {file_key}")
     else:
-        print(f"Alive file for node {common.my_uid} already exists in bucket {SERVER_BUCKET_NAME} at {file_key}")
+        if config.vBDEBUG:
+            print(f"Alive file for node {common.my_uid} already exists in bucket {SERVER_BUCKET_NAME} at {file_key}")
 
 
 def read_leader_config():
@@ -262,7 +264,7 @@ def get_all_available_servers():
     :return:
     """
     available_servers = s3_client.list_objects(Bucket=SERVER_BUCKET_NAME)
-    available_servers_list = [item["Key"] for item in available_servers["Contents"]]
+    available_servers_list = [item["Key"] for item in available_servers["Contents"]] if "Contents" in available_servers else []
     print(cyan(f"Available servers: {available_servers_list}"))
 
     return available_servers_list
@@ -288,6 +290,9 @@ def remove_server_from_leader_config():
                 s3_client.put_object(Body=new_content.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
 
                 print(f"removed myself from leader_config.json")
+                if len(get_all_available_servers()) > 0:
+                    print(red("i am dead leader, so i am electing a new leader"))
+                    leader_election()
                 common.current_leader = None
             else:
                 print(f"i am not the leader, so i could just die")
@@ -309,37 +314,48 @@ def initiate_leader_election():
 
     while True:
         create_alive_file()
-        common.current_leader = read_leader_config()
-        if config.BDEBUG:
-            print(red("[Leader Election]"), "Current Leader", common.current_leader)
-        # Check if current_leader is a valid object {uid, ip, port}
-        if common.current_leader is not None:
-            leader_alive = is_leader_alive(common.current_leader)
-
-            if leader_alive:
-                print(red("[Leader Election]"), f"Leader {common.current_leader} is alive.")
-            else:
-                print(red("[Leader Election]"),
-                      f"Leader {common.current_leader} is not alive. Re-electing a new leader.")
-                common.current_leader = None
-        else:
-            print(red("[Leader Election]"), "No current leader information available. No action needed.")
-            common.current_leader = None
-
-        # Check if the S3 object (file) exists
-        if common.current_leader is None:
-            # If no leader or the current leader is not alive, elect a new leader
-            available_nodes = get_all_available_servers()
-            # choose the node with the lowest node_id as the new leader
-            if available_nodes:
-                new_leader_key = get_new_leader_from_list(available_nodes)
-                new_leader = get_info_from_identifier(new_leader_key)
-                if new_leader is not None:
-                    print(red("[Leader Election]"), f"Node {new_leader['ip']} elected as the new leader.")
-                    common.current_leader = new_leader
-                    write_leader_config(common.current_leader)
+        leader_election()
 
         time.sleep(LEADER_CHECK_INTERVAL)
+
+
+def leader_election():
+    common.current_leader = read_leader_config()
+    if config.BDEBUG:
+        print(yellow("[Leader Election]"), "Current Leader", common.current_leader)
+
+    # Check if current_leader is a valid object {uid, ip, port}
+    if common.current_leader is not None:
+        leader_alive = is_leader_alive(common.current_leader)
+
+        if leader_alive:
+            print(red("[Leader Election]"), f"Leader {common.current_leader} is alive.")
+            if common.current_leader['uid'] == common.my_uid:
+                if not common.is_leader:
+                    print(red("i am the leader, but i dont know, i must be elected recently, updating my info"))
+                    common.is_leader = True
+                    update_local_node_list()
+        else:
+            print(red("[Leader Election]"),
+                  f"Leader {common.current_leader} is not alive. Re-electing a new leader.")
+            common.current_leader = None
+    else:
+        print(red("[Leader Election]"), "No current leader information available. No action needed.")
+        common.current_leader = None
+
+    # Check if the S3 object (file) exists
+    if common.current_leader is None:
+        # If no leader or the current leader is not alive, elect a new leader
+        available_nodes = get_all_available_servers()
+        # choose the node with the lowest node_id as the new leader
+        if available_nodes:
+            new_leader_key = get_new_leader_from_list(available_nodes)
+            new_leader = get_info_from_identifier(new_leader_key)
+            if new_leader is not None:
+                print(red("[Leader Election]"),
+                      f"Node {new_leader['ip']}:{new_leader['port']} elected as the new leader.")
+                common.current_leader = new_leader
+                write_leader_config(common.current_leader)
 
 
 def init_server():
@@ -354,7 +370,6 @@ def init_server():
         print(red("[SERVER SHUTTING DOWN]"), "Closing server...")
         remove_alive_file()
         remove_server_from_leader_config()
-
         # Print a message indicating where the IP addresses are stored
         sys.exit(0)
 
@@ -599,7 +614,7 @@ def boot_leave_func(node_info):
             print(
                 red(f"there is no enough nodes in the network to keep the replication factor, so no replicate from now on"))
             common.node_k = 0
-            update_nodes_replication_factor(0)
+            update_nodes_replication_factor(0, node_info)
 
     if len(common.mids) == 1:
         print(red(f"Node {node_info['uid']} is the last node in the network, so it can just dead"))
@@ -649,7 +664,7 @@ def boot_leave_func(node_info):
         n_ok = False
 
     if n_ok and p_ok:
-        del common.mids[node_idx]
+        delete_node_from_node_list(node_info)
         print(red(f"Node {node_info['uid']} with {node_info['ip']}:{node_info['port']} removed successfully"))
         return "you are ok to die"
     else:
@@ -664,7 +679,7 @@ def boot_leave_func(node_info):
         return "no"
 
 
-def update_nodes_replication_factor(new_k):
+def update_nodes_replication_factor(new_k, except_node=None):
     print(red(f"updating nodes replication factor to {new_k}"))
 
     def send_update_k_request(node, k):
@@ -672,6 +687,8 @@ def update_nodes_replication_factor(new_k):
                       data={"k": k})
 
     for node in common.mids:
+        if node == except_node:
+            continue
         if config.BDEBUG:
             print(yellow(f"updating node {node['uid']} with {node['ip']}:{node['port']}"))
         threading.Thread(target=send_update_k_request, args=(node, new_k)).start()

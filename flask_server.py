@@ -25,7 +25,8 @@ from werkzeug.utils import secure_filename
 
 import config
 import supernode
-from supernode import init_server, bootstrap_join_func, boot_leave_func
+from supernode import init_server, bootstrap_join_func, boot_leave_func, read_leader_config, get_node_list_from_s3, \
+    update_local_node_list
 from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
@@ -46,11 +47,23 @@ def home():
     )
 
 
-@app.route(endpoints.ping, methods=['GET'])
+@app.route(endpoints.ping_server, methods=['GET'])
 def ping():
     """
     Return "pong" if the node is alive.
     """
+    if not common.is_leader:
+        print(red("i dont know i am leader, but i got ping, checking if am the new leader"))
+        leader = read_leader_config()
+        if leader is None:
+            return 400
+        if leader["uid"] == common.my_uid:
+            print(red("i am recently elected as leader, updating my status"))
+            common.is_leader = True
+            common.current_leader = leader
+            update_local_node_list()
+        else:
+            return 400
     return "pong"
 
 

@@ -22,8 +22,8 @@ boot_leave = '/boot/leave'
 global b_list  # GET: returns list of nodes in the Chord
 b_list = '/boot/list'
 
-global ping # GET: check if the node alive, returns "pong"
-ping = '/ping'
+global ping_server # GET: check if the node alive, returns "pong"
+ping_server = '/ping'
 
 # ----------------------------------------------
 # node endpoints

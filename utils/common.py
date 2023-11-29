@@ -24,6 +24,7 @@ node_k = 0
 # The node's global variable
 global is_bootstrap  # true if node is bootstrap
 global is_leader  # true if the bootstrap node is leader
+is_leader = False
 global my_uid  # my unique identifier, hash of my_ip:my_port
 global my_port
 global my_ip

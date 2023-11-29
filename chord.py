@@ -23,6 +23,7 @@ import requests
 import config
 from utils import common, endpoints
 from utils.colorfy import *
+from utils.util import ping_server
 
 
 # ----------------------Node Function---------------------------------------
@@ -108,6 +109,12 @@ def node_init_leave():
     if config.NDEBUG:
         print(yellow(f"[node_init_leave] i am the node {common.my_uid} with {common.my_ip}:{common.my_port}"
                      f"and i am going down..."))
+
+    print(red("i am going down, sending leave request to the server..."))
+    has_server = get_server_from_cloud()
+    if not has_server:
+        print(red("i am going down, but i cannot find the server. i would just die.."))
+        return "last node, just die"
 
     # send depart request to the supernode, begging to leave
     response = requests.post(config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.boot_leave,
@@ -352,12 +359,19 @@ def get_server_from_cloud():
         file_content = response.text
         if file_content == "":
             print(red(f"server config is empty, no server is running"))
-            print(red(f"[FATAL] Exiting as no server is running"))
+            print(red(f"[FATAL] no server is running"))
             return False
         current_server = json.loads(file_content)
         if config.BOOTSTRAP_IP != current_server["ip"] or config.BOOTSTRAP_PORT != current_server["port"]:
             print(red(f"new server detected!!!"))
+            server_alive = ping_server(current_server["ip"], current_server["port"])
+            if not server_alive:
+                print(red(f"new server is not alive, exiting"))
+                return False
             set_server(current_server)
+            return True
+        else:
+            print(red(f"server is the same as before"))
             return True
 
     else:
