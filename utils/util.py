@@ -12,13 +12,18 @@
 
 import hashlib
 
+import requests
+
+import config
+
 
 def hash_str(s):
     return hashlib.sha256(s.encode('utf-8')).hexdigest()
 
 
 def get_identifier(uid, ip, port):
-    return uid+'_'+ip+'_'+str(port)
+    return uid + '_' + ip + '_' + str(port)
+
 
 def get_info_from_identifier(file):
     """
@@ -31,3 +36,17 @@ def get_info_from_identifier(file):
         'ip': file.split('_')[1],
         'port': file.split('_')[2]
     }
+
+
+def ping_server(server_ip=config.BOOTSTRAP_IP, server_port=config.BOOTSTRAP_PORT):
+    """
+    This function pings a server to check if it is alive.
+    :param server_ip: The server ip
+    :param server_port: The server port
+    :return: True if the server is alive, False otherwise
+    """
+    response = requests.get(f"{config.ADDR}{server_ip}:{server_port}/ping")
+    if response.status_code == 200 and response.text == 'pong':
+        return True
+    else:
+        return False

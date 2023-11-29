@@ -30,7 +30,8 @@ from utils import common, endpoints
 from utils.colorfy import *
 from chord import hash, node_update_neighbours_func, node_replic_nodes_list, node_redistribute_data, \
     node_update_finger_table_func, insert_file_to_chord, send_upload_file_to_node, node_initial_join, \
-    query_file_in_the_chord, init_node, replicate_file, node_start_k_replication, replicate_chain_start
+    query_file_in_the_chord, init_node, replicate_file, node_start_k_replication, replicate_chain_start, set_server, \
+    get_server_from_cloud
 
 app = Flask(__name__)
 
@@ -711,7 +712,13 @@ def server_start():
         print("and my file directory is: " + green(common.node_file_dir))
         # create the directory for the node
         create_node_dir()
-        print(red("I have created the file directory for me, now i will join the chord"))
+        print(red("I have created the file directory for me"))
+
+        print(red("I am about to join the chord, first i need to know who is the server"))
+        server_set = get_server_from_cloud()
+        if not server_set:
+            print(red(f"[FATAL] no server is set in the cloud, exiting the program"))
+            exit(1)
         x = threading.Thread(target=node_initial_join, args=())
         x.start()
         init_node()

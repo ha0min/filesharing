@@ -74,7 +74,6 @@ def node_initial_join():
                 print(yellow("\nattempting to join the Chord..."))
             try:
                 # target = config.LOCAL_SERVER ? config.LOCAL_BOOTSTRAP_IP :config.BOOTSTRAP_IP
-                config.BOOTSTRAP_IP = config.LOCAL_BOOTSTRAP_IP if config.LOCAL_SERVER else config.EC2_BOOTSTRAP_IP
                 response = requests.post(
                     config.ADDR + config.BOOTSTRAP_IP + ":" + config.BOOTSTRAP_PORT + endpoints.boot_join,
                     data={"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})
@@ -85,8 +84,6 @@ def node_initial_join():
                     prev_node = data["prev"]
                     next_node = data["next"]
                     init_k = data["k"]
-
-
 
                     common.nids.append(prev_node)
                     common.nids.append(next_node)
@@ -339,6 +336,44 @@ def replicate_chain_start(node_info, k, filename):
         print(red(f"something wrong when sending replica chain for {filename}"), response.text, response.status_code)
         return "error"
 
+
+def get_server_from_cloud():
+    """
+    get the server
+    :return:
+    """
+
+    # Make an HTTP GET request to the S3 object URL
+    response = requests.get(config.aws_server_file_url)
+
+    # Check if the request was successful (status code 200)
+    if response.status_code == 200:
+        # Get the content of the file
+        file_content = response.text
+        if file_content == "":
+            print(red(f"server config is empty, no server is running"))
+            print(red(f"[FATAL] Exiting as no server is running"))
+            return False
+        current_server = json.loads(file_content)
+        if config.BOOTSTRAP_IP != current_server["ip"] or config.BOOTSTRAP_PORT != current_server["port"]:
+            print(red(f"new server detected!!!"))
+            set_server(current_server)
+            return True
+
+    else:
+        print(red(f"Failed to retrieve the file. Status code: {response.status_code}"))
+        print(red(f"[FATAL] Exiting as reading server config failed"))
+        return False
+
+def set_server(new_server):
+    """
+    set the server
+    :param new_server:
+    :return:
+    """
+    config.BOOTSTRAP_IP = new_server["ip"]
+    config.BOOTSTRAP_PORT = new_server["port"]
+    print(red(f"setting new server to {new_server} successfully"))
 
 
 # ----------------------Syllabus Function---------------------------------------

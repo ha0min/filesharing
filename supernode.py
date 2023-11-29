@@ -60,7 +60,7 @@ leader_lock = threading.Lock()
 
 
 # Create an S3 client
-s3_client = None
+global s3_client
 
 
 # s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
