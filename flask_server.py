@@ -574,7 +574,7 @@ def query_file():
                 # delete the query file result
                 del common.query_file_result[hashed_filename]
                 print(red("file not found in chord"))
-                return 'File not found in chord', 404
+                return 'File not found in chord', 200
 
             print(red(f"the file is hosted by {str(hosted_node)}, i will return the url to the user"))
 

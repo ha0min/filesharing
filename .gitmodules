@@ -1,0 +1,3 @@
+[submodule "filesharingweb"]
+	path = filesharingweb
+	url = https://github.com/ha0min/filesharingweb.git
