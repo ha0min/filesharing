@@ -80,17 +80,23 @@ def node_initial_join():
                     data={"uid": common.my_uid, "ip": common.my_ip, "port": common.my_port})
                 if response.status_code == 200:
                     data = response.json()
-
+                    if config.NDEBUG:
+                        print(yellow(f"join server respond with data: {data}"))
                     prev_node = data["prev"]
                     next_node = data["next"]
+                    init_k = data["k"]
+
+
 
                     common.nids.append(prev_node)
                     common.nids.append(next_node)
+                    common.k = init_k
 
                     if config.NDEBUG:
                         print(f"Joined Chord successfully!!")
                         print(f"Previous Node: {json.dumps(prev_node)}")
                         print(f"Next Node: {json.dumps(next_node)}")
+                        print(f"initialized k is: {init_k}")
                 else:
                     print("Something went wrong!!  status code: " + red(response.status_code))
                     print(red("\nexiting..."))

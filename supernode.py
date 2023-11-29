@@ -396,7 +396,8 @@ def bootstrap_join_func(new_node):
                 "uid": new_node["uid"],
                 "ip": new_node["ip"],
                 "port": new_node["port"]
-            }
+            },
+            "k": common.node_k,
         }
         save_node_list_to_s3(common.mids)
         common.server_node_joining = False
@@ -437,17 +438,18 @@ def bootstrap_join_func(new_node):
         print(RED("Something went wrong while updating next node list"))
 
     if config.NDEBUG:
-        print("Master completed join of the node")
+        print(yellow(f"Node {new_node['ip']}:{new_node['port']} completed join the chord, server ok."))
 
-    # TODO add join procedure
-    # try:
-    #     response = requests.post(config.ADDR + new_node["ip"] + ":" + new_node["port"] + endpoints.chord_join_procedure,
-    #                              json={"prev": {"uid": prev["uid"], "ip": prev["ip"], "port": prev["port"]},
-    #                                    "next": {"uid": next["uid"], "ip": next["ip"], "port": next["port"]},
-    #                                    "length": len(common.mids) - 1})
-    #     print(response.text)
-    # except:
-    #     print("Something went wrong with join procedure")
+        # check if the joined node makes replication possible
+        if len(common.mids) > common.k:
+            if common.node_k != common.k:
+                print(red(f"Now there are {len(common.mids)} nodes in the Chord. {common.k} Replication is possible."))
+                print(red(f"i should change nodes' factor from {common.node_k} to {common.k}"))
+                common.node_k = common.k
+                update_nodes_replication_factor(common.k)
+            else:
+                if config.BDEBUG:
+                    print(blue("Replication is already possible, so when last node join, the k should be updated."))
 
     response = {
         "prev": {
@@ -459,7 +461,8 @@ def bootstrap_join_func(new_node):
             "uid": next["uid"],
             "ip": next["ip"],
             "port": next["port"]
-        }
+        },
+        "k": common.node_k
     }
     common.server_node_joining = False
     return json.dumps(response)
@@ -609,6 +612,15 @@ def boot_leave_func(node_info):
         delete_node_from_node_list(node_info)
         return "you are ok to die", 200
 
+    # update k first, so the node would not casue infinite replicate after sending the update neighbours request
+    if common.node_k != 0:
+        if len(common.mids) - 1 <= common.k:
+            print(
+                red(f"there is no enough nodes in the network to keep the replication factor, so no replicate from now on"))
+            common.node_k = 0
+            update_nodes_replication_factor(0)
+
+
     prev_of_prev = common.mids[node_idx - 2] if node_idx >= 2 else (
         common.mids[-1] if node_idx >= 1 else common.mids[-2])
     prev = common.mids[node_idx - 1] if node_idx >= 1 else common.mids[-1]
@@ -651,3 +663,19 @@ def boot_leave_func(node_info):
         #                            json={"prev": prev, "next": next_of_next, "change": "prev"})
         #
         return "no"
+
+
+def update_nodes_replication_factor(new_k):
+    print(red(f"updating nodes replication factor to {new_k}"))
+
+    def send_update_k_request(node, k):
+            requests.post(config.ADDR + node["ip"] + ":" + node["port"] + endpoints.node_update_k,
+                          data={"k": k})
+
+    for node in common.mids:
+        if config.BDEBUG:
+            print(yellow(f"updating node {node['uid']} with {node['ip']}:{node['port']}"))
+        threading.Thread(target=send_update_k_request, args=(node, new_k)).start()
+
+    print(red(f"send update to nodes setting their replication factor to {new_k}"))
+

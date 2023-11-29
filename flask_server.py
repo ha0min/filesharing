@@ -422,7 +422,7 @@ def node_update_k():
 
     # check if the form has k
     if 'k' not in request.form:
-        return 'Please provide a k and node_info', 400
+        return 'Please provide a k', 400
 
     # check if the request is sent by the server
     if request.remote_addr != config.BOOTSTRAP_IP:
@@ -436,9 +436,8 @@ def node_update_k():
 
     if k == 0:
         print(red(f"the k is set to zero, i am not going to replicate any file from now on"))
-        pass
-
-    node_start_k_replication()
+    else:
+        node_start_k_replication()
 
     return "update k success", 200
 

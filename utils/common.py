@@ -17,6 +17,9 @@
 global k  # number of replicas
 k = 0
 
+global node_k # the k value should be used in the node
+node_k = 0
+
 # --------------------------------------------------------
 # The node's global variable
 global is_bootstrap  # true if node is bootstrap
