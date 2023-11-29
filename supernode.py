@@ -115,7 +115,7 @@ def read_leader_config():
         content = response["Body"].read().decode("utf-8")
 
         if config.BDEBUG:
-            print(blue(f"[read_leader_config] content {content}"))
+            print(blue(f"[read_leader_config] content: {content}"))
         if not content:
             # Handle empty file content
             return None
@@ -211,13 +211,28 @@ def remove_alive_file():
         return
 
     file_key = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
-    try:
-        s3_client.delete_object(Bucket=SERVER_BUCKET_NAME, Key=file_key)
-        print(f"Alive file {file_key} successfully removed from bucket {SERVER_BUCKET_NAME}.")
-    except s3_client.exceptions.NoSuchKey:
+
+    # check all available server
+    avaialbe_server_list = get_all_available_servers()
+
+    if file_key in avaialbe_server_list:
+        try:
+            s3_client.delete_object(Bucket=SERVER_BUCKET_NAME, Key=file_key)
+            print(red(f"Alive file {file_key} successfully removed from bucket {SERVER_BUCKET_NAME}."))
+        except Exception as e:
+            print(red(f"An error occurred while removing the alive file: {e}"))
+
+        if len(avaialbe_server_list) == 1:
+            # if the current node is the leader, then we need to elect a new leader
+            print(red("i am the only server and i am dead now, so the network is dead, deleting the node list file"))
+            try:
+                s3_client.delete_object(Bucket=BUCKET_NAME, Key=NODES_LIST_FILE)
+                print(red(f"Node list file successfully removed from bucket {BUCKET_NAME}."))
+            except Exception as e:
+                print(red(f"An error occurred while removing the node list file: {e}"))
+    else:
         print(f"Alive file {file_key} does not exist in bucket {SERVER_BUCKET_NAME}.")
-    except Exception as e:
-        print(f"An error occurred while removing the alive file: {e}")
+
 
 
 def get_new_leader_from_list(server_list):
@@ -231,8 +246,7 @@ def get_new_leader_from_list(server_list):
 
     for file in server_list:
         # Extracting the file name
-        file_key = file["Key"]
-        print(cyan("file_key"), str(file_key))
+        file_key = file
 
         # Splitting the file name to get the node_id
         node_id = file_key.split('_')[0]
@@ -250,8 +264,10 @@ def get_all_available_servers():
     :return:
     """
     available_servers = s3_client.list_objects(Bucket=SERVER_BUCKET_NAME)
-    print(cyan("Available servers"), str(available_servers["Contents"]))
-    return available_servers["Contents"]
+    available_servers_list = [item["Key"] for item in available_servers["Contents"]]
+    print(cyan(f"Available servers: {available_servers_list}"))
+
+    return available_servers_list
 
 
 def remove_server_from_leader_config():
@@ -263,19 +279,20 @@ def remove_server_from_leader_config():
         common.current_leader = read_leader_config()
         print(red("Current Leader"), str(common.current_leader))
         if common.current_leader is not None:
-            print(red("[Update Leader Config]"), ("Try to remove myself as current leader from leader_config.txt..."))
             current_node_identifier = f'{common.my_uid}_{common.my_ip}_{common.my_port}'
 
             # Check if the current leader is the same as the current node
-            if common.current_leader == current_node_identifier:
+            if common.current_leader['uid'] == common.my_uid:
+                print(red("I am the leader, i am dead now, so removing myself from leader_config.json"))
                 # Remove the current_leader from the file content
                 new_content = ''
                 # Update the leader_config.txt file in S3 with the modified content
                 s3_client.put_object(Body=new_content.encode("utf-8"), Bucket=BUCKET_NAME, Key=LEADER_FILE)
 
-                print(f"{current_leader} removed from leader_config.txt")
+                print(f"removed myself from leader_config.json")
+                common.current_leader = None
             else:
-                print(f"{current_leader} not found in leader_config.txt. No action needed.")
+                print(f"i am not the leader, so i could just die")
         else:
             print("No current leader information available. No action needed.")
     except Exception as e:
