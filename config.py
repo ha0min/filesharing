@@ -25,6 +25,10 @@ TDEBUG = False  # debug information fot test operations
 vBDEBUG = False  # extra verbose debug information for bootstrap operations
 vNDEBUG = False  # extra verbose debug information for node operations
 
+aws_access_key = ""
+aws_secret_key = ""
+aws_region = ""
+
 LOCAL_SERVER = False # if True, the server will be run locally, else it will be run on the AWS
 
 FILE_DIR = BASE_DIR + 'files/'

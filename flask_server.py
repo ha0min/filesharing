@@ -17,11 +17,14 @@ import socket
 import threading
 import time
 
+import boto3
 import requests
+from dotenv import load_dotenv
 from flask import Flask, json, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
 import config
+import supernode
 from supernode import init_server, bootstrap_join_func, boot_leave_func
 from utils import common, endpoints
 from utils.colorfy import *
@@ -361,7 +364,6 @@ def chain_query_replica():
     return json.dumps({"status": "no"})
 
 
-
 @app.route(endpoints.node_query_result, methods=['POST'])
 def node_query_result():
     """
@@ -434,7 +436,7 @@ def node_update_k():
 
     print(red(f"got instruction from server to update k to {k}"))
 
-    if k == 0:
+    if int(k) == 0:
         print(red(f"the k is set to zero, i am not going to replicate any file from now on"))
     else:
         node_start_k_replication()
@@ -659,6 +661,7 @@ def get_file():
 
     return response
 
+
 def server_start():
     """
     Entry point of the flask server.
@@ -675,7 +678,6 @@ def server_start():
 
     common.my_port = args.port
 
-
     common.my_ip = get_my_ip()
     common.my_uid = hash(common.my_ip + ":" + common.my_port)
     common.node_file_dir = config.FILE_DIR + common.my_uid + "/"
@@ -684,6 +686,14 @@ def server_start():
     common.node_upload_file_dir = common.node_file_dir + "upload_files/"
 
     if args.bootstrap:
+        if config.BDEBUG:
+            print(blue("reading the env file first"))
+
+        if not read_env_file():
+            print(red(".env file is not exist or not valid"))
+            print(red("{FATAL} exiting the program"))
+            return
+
         print("I am the Bootstrap Node with ip: " + yellow(
             common.my_ip) + " about to run a Flask server on port " + yellow(common.my_port))
         print("and my unique id is: " + green(common.my_uid))
@@ -780,6 +790,31 @@ def is_valid_course_id(course_id):
     :return:
     """
     return re.match(r'^[A-Za-z]{4}\d+$', course_id)
+
+
+def read_env_file():
+    load_dotenv()
+
+    aws_access_key = os.getenv('AWS_ACCESS_KEY')
+    aws_secret_key = os.getenv('AWS_SECRET_KEY')
+    aws_region = os.getenv('REGION_NAME')
+
+    if config.BDEBUG:
+        print(blue(
+            f"[read_env_file] aws_access_key = {aws_access_key}, aws_secret_key = {aws_secret_key}, aws_region = {aws_region}"))
+
+    # if any of the above is None, then we are not using S3
+    if aws_access_key is None or aws_secret_key is None or aws_region is None:
+        return False
+
+    config.aws_access_key = os.getenv('AWS_ACCESS_KEY')
+    config.aws_secret_key = os.getenv('AWS_SECRET_KEY')
+    config.aws_region = os.getenv('REGION_NAME')
+
+    supernode.s3_client = boto3.client('s3', aws_access_key_id=config.aws_access_key, aws_secret_access_key=config.aws_secret_key,
+                         region_name=config.aws_region)
+
+    return True
 
 
 def parse_args():

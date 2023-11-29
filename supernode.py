@@ -58,12 +58,11 @@ heartbeat_lock = threading.Lock()
 connected_clients_lock = threading.Lock()
 leader_lock = threading.Lock()
 
-aws_access_key = ''
-aws_secret_key = ''
-region_name = ''
 
 # Create an S3 client
-s3_client = boto3.client('s3', aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key, region_name=region_name)
+s3_client = None
+
+
 # s3_server_bucket = boto3.resource('s3').Bucket(SERVER_BUCKET_NAME)
 # s3_server = boto3.resource('s3')
 
@@ -232,7 +231,6 @@ def remove_alive_file():
                 print(red(f"An error occurred while removing the node list file: {e}"))
     else:
         print(f"Alive file {file_key} does not exist in bucket {SERVER_BUCKET_NAME}.")
-
 
 
 def get_new_leader_from_list(server_list):
@@ -589,11 +587,11 @@ def send_finger_table_update(node, finger_table):
 def boot_leave_func(node_info):
     if node_info not in common.mids:
         return "you are not in network", 400
-    
+
     node_idx = common.mids.index(node_info)
     print(red(f"Node {node_info['uid']} with {node_info['ip']}:{node_info['port']} asking to leave the network..."))
 
-    print(red(f"so we have only {len(common.mids)-1} nodes in the network after it leave..."))
+    print(red(f"so we have only {len(common.mids) - 1} nodes in the network after it leave..."))
 
     if len(common.mids) == 1:
         print(red(f"Node {node_info['uid']} is the last node in the network, so it can just dead"))
@@ -606,7 +604,7 @@ def boot_leave_func(node_info):
 
         next = common.mids[node_idx + 1] if node_idx < len(common.mids) - 1 else common.mids[0]
         response = requests.post(config.ADDR + next["ip"] + ":" + next["port"] + endpoints.node_update_neighbours,
-                                    json={"prev": next, "next": next, "change": "prev"})
+                                 json={"prev": next, "next": next, "change": "prev"})
         if response.status_code == 200 and response.text == "new neighbours set":
             print(red(f"Updated neighbours of {next['ip']}:{next['port']} specially successfully"))
         delete_node_from_node_list(node_info)
@@ -619,7 +617,6 @@ def boot_leave_func(node_info):
                 red(f"there is no enough nodes in the network to keep the replication factor, so no replicate from now on"))
             common.node_k = 0
             update_nodes_replication_factor(0)
-
 
     prev_of_prev = common.mids[node_idx - 2] if node_idx >= 2 else (
         common.mids[-1] if node_idx >= 1 else common.mids[-2])
@@ -669,8 +666,8 @@ def update_nodes_replication_factor(new_k):
     print(red(f"updating nodes replication factor to {new_k}"))
 
     def send_update_k_request(node, k):
-            requests.post(config.ADDR + node["ip"] + ":" + node["port"] + endpoints.node_update_k,
-                          data={"k": k})
+        requests.post(config.ADDR + node["ip"] + ":" + node["port"] + endpoints.node_update_k,
+                      data={"k": k})
 
     for node in common.mids:
         if config.BDEBUG:
@@ -678,4 +675,3 @@ def update_nodes_replication_factor(new_k):
         threading.Thread(target=send_update_k_request, args=(node, new_k)).start()
 
     print(red(f"send update to nodes setting their replication factor to {new_k}"))
-
